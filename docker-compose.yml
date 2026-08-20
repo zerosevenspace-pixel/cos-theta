@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  cos-theta-app:
+    build: .
+    container_name: cos-theta-server
+    restart: always
+    ports:
+      - "80:8000"
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - SUPABASE_DATABASE_URL=${SUPABASE_DATABASE_URL:-}
+      - AI_API_BASE=http://168.144.91.0:8080/v1
+      - AI_API_KEY=sk-bd99f718ae7d4f35bb4ecc22c1e5780c
+    volumes:
+      - ./cos_theta_data:/app/data
