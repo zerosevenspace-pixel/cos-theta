@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.github
+.env
+cos_theta.db
+cos_theta_data
+scratch
+.pytest_cache
