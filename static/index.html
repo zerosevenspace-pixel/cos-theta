@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COS Theta — Internal Business Operating System</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  
+  <!-- Geist Font Families -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- CSS Token Hierarchy & Stylesheet -->
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/variables.css">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Injected by JavaScript -->
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <div class="main-wrapper">
+      <!-- Top Header Bar with Multi-Business Switcher -->
+      <header class="top-header" id="top-header">
+        <!-- Injected by JavaScript -->
+      </header>
+
+      <!-- Active Page Content -->
+      <main class="page-content" id="page-content">
+        <!-- Dynamically rendered views -->
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Application Logic -->
+  <script src="/static/js/utils/icons.js"></script>
+  <script src="/static/js/utils/api.js"></script>
+  <script src="/static/js/app.js"></script>
+  <!-- App auto-boots from app.js -->
+
+</body>
+</html>
