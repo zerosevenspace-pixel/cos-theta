@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.local
+.env.*.local
+cos_theta.db
+cos_theta_data/
+.pytest_cache/
+scratch/
+.system_generated/
