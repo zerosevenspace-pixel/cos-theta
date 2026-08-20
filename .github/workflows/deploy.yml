@@ -1,0 +1,30 @@
+name: Deploy to DigitalOcean Droplet
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Container on DigitalOcean Droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_KEY }}
+          passphrase: ${{ secrets.DO_SSH_PASSPHRASE }}
+          script: |
+            set -e
+            echo "🚀 Deploying COS Theta update..."
+            cd /root/cos-theta || git clone https://github.com/zerosevenspace-pixel/cos-theta.git /root/cos-theta
+            cd /root/cos-theta
+            git pull origin main
+            docker compose down || true
+            docker compose up -d --build
+            echo "✅ COS Theta live deployment complete!"
