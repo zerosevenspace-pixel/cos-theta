@@ -10,3 +10,4 @@ cos_theta_data/
 .pytest_cache/
 scratch/
 .system_generated/
+.aider*
