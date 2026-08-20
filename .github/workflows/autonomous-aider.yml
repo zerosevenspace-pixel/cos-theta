@@ -1,0 +1,80 @@
+name: Autonomous Aider Self-Improving Pipeline
+
+on:
+  repository_dispatch:
+    types: [autonomous_aider_prompt]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Instruction prompt for Autonomous Aider'
+        required: true
+        default: 'Refactor and optimize system telemetry metrics'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  autonomous-code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install System Dependencies & Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y libpq-dev
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install aider-chat
+
+      - name: Configure Git Author
+        run: |
+          git config user.name "Autonomous Aider Bot"
+          git config user.email "aider-bot@costheta.internal"
+
+      - name: Execute Autonomous Aider AI Coding
+        env:
+          OPENAI_API_BASE: ${{ secrets.AI_API_BASE || 'http://168.144.91.0:8080/v1' }}
+          OPENAI_API_KEY: ${{ secrets.AI_API_KEY || 'sk-bd99f718ae7d4f35bb4ecc22c1e5780c' }}
+          PROMPT_TEXT: ${{ github.event.client_payload.prompt || inputs.prompt }}
+        run: |
+          echo "=========================================================="
+          echo "🤖 STARTING AUTONOMOUS AIDER AGENT"
+          echo "Prompt: $PROMPT_TEXT"
+          echo "=========================================================="
+          
+          aider --model openai/gemini-3.7-flash-tiered \
+                --openai-api-base "$OPENAI_API_BASE" \
+                --openai-api-key "$OPENAI_API_KEY" \
+                --message "$PROMPT_TEXT" \
+                --no-auto-commits \
+                --yes \
+                backend/app.py backend/database.py static/js/app.js static/css/app.css static/index.html || true
+
+      - name: Run Backend Regression Tests
+        run: |
+          echo "Running regression tests to verify Aider modifications..."
+          python test_backend.py
+
+      - name: Commit & Push Tested Autonomous Changes
+        env:
+          PROMPT_TEXT: ${{ github.event.client_payload.prompt || inputs.prompt }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "🤖 [Autonomous Aider] $PROMPT_TEXT"
+            git push origin main
+            echo "Successfully pushed autonomous modifications to main!"
+          else
+            echo "No file changes detected by Aider."
+          fi
