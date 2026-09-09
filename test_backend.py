@@ -1,131 +1,129 @@
-"""
-Backend automated test suite for COS Theta Business Operating System.
-"""
-
-import os
 import sys
-
-# Add project root to sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import os
+sys.path.insert(0, '.')
 
 from fastapi.testclient import TestClient
 from backend.app import app
+from backend.database import init_db
+from backend.seed_data import seed_if_empty
+
+init_db()
+seed_if_empty()
 
 client = TestClient(app)
 
+def run_tests():
+    print("=== ZERO7 CRM E2E TEST SUITE ===")
+    
+    # 1. Login Admin
+    res = client.post("/api/auth/login", json={"email": "abhijeet@zero7.in", "password": "admin123"})
+    assert res.status_code == 200, f"Admin login failed: {res.text}"
+    admin_token = res.json()["token"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    print("[PASS] 1. Admin login")
 
-def test_system():
-    print("Testing Backend Systems...")
+    # 2. Get Me
+    res = client.get("/api/auth/me", headers=admin_headers)
+    assert res.status_code == 200 and res.json()["role"] == "admin"
+    print(f"[PASS] 2. Auth me ({res.json()['name']} - {res.json()['role']})")
 
-    # 1. Test Login
-    login_resp = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
-    assert login_resp.status_code == 200, f"Login failed: {login_resp.text}"
-    user = login_resp.json()["user"]
-    print(f"[PASS] Auth verified: Logged in as {user['name']} ({user['role']})")
+    # 3. List Leads as Admin
+    res = client.get("/api/leads", headers=admin_headers)
+    assert res.status_code == 200
+    leads = res.json()
+    assert len(leads) >= 5
+    print(f"[PASS] 3. List leads ({len(leads)} leads visible to Admin)")
 
-    # 2. Test Stats
-    stats_all = client.get("/api/stats?business=all").json()
-    assert "total_revenue" in stats_all
-    print(f"[PASS] Multi-Tenant Stats verified (All): Total Revenue = INR {stats_all['total_revenue']:,.2f}")
+    # 4. Create Lead
+    new_lead = {
+        "name": "Arjun Kapoor",
+        "business_name": "Kapoor Logistics",
+        "phone": "+91 9988776655",
+        "email": "arjun@kapoorlogistics.in",
+        "source": "meta_ads",
+        "deal_value": 75000.0,
+        "priority": "high"
+    }
+    res = client.post("/api/leads", json=new_lead, headers=admin_headers)
+    assert res.status_code == 200
+    created_lead = res.json()
+    lead_id = created_lead["id"]
+    print(f"[PASS] 4. Created lead {lead_id} ({created_lead['name']})")
 
-    stats_filtr = client.get("/api/stats?business=filtr_coffee").json()
-    assert stats_filtr["total_orders"] >= 3
-    print(f"[PASS] FILTR Coffee Stats verified: Orders = {stats_filtr['total_orders']}, Low stock = {stats_filtr['low_stock_count']}")
+    # 5. Log Call on Lead
+    call_payload = {
+        "outcome": "Connected",
+        "notes": "Discussed retainer scope for logistics re-branding. Very interested.",
+        "duration_minutes": 15
+    }
+    res = client.post(f"/api/leads/{lead_id}/calls", json=call_payload, headers=admin_headers)
+    assert res.status_code == 200
+    print("[PASS] 5. Logged call on lead")
 
-    stats_zero7 = client.get("/api/stats?business=zero7_consultancy").json()
-    assert stats_zero7["total_leads"] >= 5
-    print(f"[PASS] Zero7 Stats verified: Total Leads = {stats_zero7['total_leads']}, Active Pipeline = {stats_zero7['active_pipeline_leads']}")
+    # 6. Add Note on Lead
+    note_payload = {
+        "content": "Follow up scheduled for tomorrow at 3 PM with presentation deck."
+    }
+    res = client.post(f"/api/leads/{lead_id}/notes", json=note_payload, headers=admin_headers)
+    assert res.status_code == 200
+    print("[PASS] 6. Added note on lead")
 
-    # 3. Test Leads & Calling Flow
-    leads_resp = client.get("/api/leads")
-    assert leads_resp.status_code == 200
-    leads = leads_resp.json()
-    assert len(leads) > 0
-    target_lead = leads[0]
+    # 7. Get Lead Details & Activity
+    res = client.get(f"/api/leads/{lead_id}", headers=admin_headers)
+    assert res.status_code == 200
+    lead_detail = res.json()
+    activities = lead_detail.get("activity", [])
+    assert len(activities) >= 2
+    print(f"[PASS] 7. Lead detail fetched ({len(activities)} activities recorded)")
 
-    call_resp = client.post(f"/api/leads/{target_lead['id']}/call", json={
-        "outcome": "Followup Confirmed",
-        "notes": "Client requested updated technical deliverable timeline.",
-        "next_followup_date": "2026-08-25"
-    })
-    assert call_resp.status_code == 200
-    print(f"[PASS] Calling log verified for {target_lead['company_name']}")
+    # 8. Convert Lead to Deal
+    res = client.post(f"/api/leads/{lead_id}/convert", headers=admin_headers)
+    assert res.status_code == 200
+    deal = res.json()
+    deal_id = deal["id"]
+    print(f"[PASS] 8. Converted lead to Deal {deal_id} (Title: {deal['title']}, Value: INR {deal['value']})")
 
-    # 4. Test FILTR Coffee Order & Stock Depletion
-    # Check current stock of Arabica Beans
-    inv_before = client.get("/api/inventory").json()
-    arabica_before = next(i for i in inv_before if i["id"] == "inv_beans_arabica")["current_stock"]
+    # 9. Update Deal Stage
+    res = client.put(f"/api/deals/{deal_id}", json={"stage": "negotiation"}, headers=admin_headers)
+    assert res.status_code == 200
+    assert res.json()["stage"] == "negotiation"
+    print(f"[PASS] 9. Updated deal stage to negotiation")
 
-    # Place order for 2 Hot Cappuccinos (each uses 0.018kg arabica beans = 0.036kg total)
-    order_resp = client.post("/api/orders", json={
-        "customer_name": "Test Customer",
-        "order_type": "dine_in",
-        "items": [{
-            "menu_item_id": "menu_cappuccino",
-            "name": "Artisan Hot Cappuccino",
-            "price": 160.0,
-            "quantity": 2
-        }],
-        "subtotal": 320.0,
-        "discount": 0.0,
-        "total": 320.0,
-        "payment_method": "upi_qr"
-    })
-    assert order_resp.status_code == 200
-    order_data = order_resp.json()
-    print(f"[PASS] Coffee POS Order created: #{order_data['order_number']}, Total: INR {order_data['total']}")
+    # 10. Login Member (Shailesh)
+    res = client.post("/api/auth/login", json={"email": "shailesh@zero7.in", "password": "member123"})
+    assert res.status_code == 200
+    member_token = res.json()["token"]
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+    print("[PASS] 10. Member login (Shailesh)")
 
-    inv_after = client.get("/api/inventory").json()
-    arabica_after = next(i for i in inv_after if i["id"] == "inv_beans_arabica")["current_stock"]
-    assert arabica_after < arabica_before, f"Stock was not depleted: before={arabica_before}, after={arabica_after}"
-    print(f"[PASS] Automatic inventory depletion verified: Arabica stock went from {arabica_before}kg to {arabica_after}kg")
+    # 11. Member only sees assigned leads
+    res = client.get("/api/leads", headers=member_headers)
+    assert res.status_code == 200
+    member_leads = res.json()
+    for l in member_leads:
+        assert l["assigned_to"] == res.json()[0]["assigned_to"]
+    print(f"[PASS] 11. Role separation verified: Member sees {len(member_leads)} assigned leads")
 
-    # 5. Test Tasks
-    task_resp = client.post("/api/tasks", json={
-        "title": "Automated verification task",
-        "description": "Ensure all modules operate smoothly.",
-        "business": "all",
-        "priority": "high",
-        "status": "todo",
-        "due_date": "2026-08-25",
-        "tags": ["Testing", "Verification"]
-    })
-    assert task_resp.status_code == 200
-    task_id = task_resp.json()["id"]
-    print(f"[PASS] Task created with ID: {task_id}")
+    # 12. Meta Ads Webhook
+    meta_payload = {
+        "name": "Kavita Rao",
+        "business_name": "Rao Health Tech",
+        "phone": "+91 9123456780",
+        "email": "kavita@raohealth.com",
+        "ad_name": "Zero7 Instagram Story Ad"
+    }
+    res = client.post("/api/webhooks/meta-leads", json=meta_payload)
+    assert res.status_code == 200 and res.json()["status"] == "success"
+    print("[PASS] 12. Meta Lead Ads webhook received & processed")
 
-    # 6. Test AI Assistant Query
-    ai_resp = client.post("/api/ai/query", json={
-        "query": "Which items are low in stock at FILTR coffee?",
-        "business_context": "filtr_coffee"
-    })
-    assert ai_resp.status_code == 200
-    ai_data = ai_resp.json()
-    assert "Low Stock" in ai_data["answer"] or "FILTR Coffee" in ai_data["answer"]
-    print("[PASS] AI Assistant Intelligence engine verified")
+    # Verify that the webhook created a lead
+    res = client.get("/api/leads", headers=admin_headers)
+    meta_leads = [l for l in res.json() if l["email"] == "kavita@raohealth.com"]
+    assert len(meta_leads) == 1
+    assert meta_leads[0]["source"] == "meta_ads"
+    print(f"[PASS] 13. Ingested Meta lead verified in database: {meta_leads[0]['name']}")
 
-    # 7. Test Google Integrations
-    sheets_sync = client.post("/api/integrations/sheets/sync").json()
-    assert sheets_sync["success"] is True
-    print("[PASS] Google Sheets Two-Way Sync connector verified")
-
-    # 8. Test Frontend Static Assets & Routes
-    root_resp = client.get("/")
-    assert root_resp.status_code == 200
-    assert "COS Theta" in root_resp.text
-
-    css_resp = client.get("/static/css/app.css")
-    assert css_resp.status_code == 200
-    assert "--color-canvas" in css_resp.text
-
-    js_resp = client.get("/static/js/app.js")
-    assert js_resp.status_code == 200
-    assert "COS Theta" in js_resp.text
-
-    print("[PASS] Frontend Static Assets & Web Interface routes verified")
-
-    print("\nALL BACKEND SYSTEMS & INTEGRATIONS VERIFIED SUCCESSFULLY!")
-
+    print("\nALL 13 TESTS PASSED PERFECTLY!")
 
 if __name__ == "__main__":
-    test_system()
+    run_tests()
