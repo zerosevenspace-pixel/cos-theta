@@ -5,7 +5,7 @@ from typing import Optional
 import os
 
 from backend.database import Repository, init_db
-from backend.models import UserLogin, UserCreate, LeadCreate, LeadUpdate, DealCreate, DealUpdate, CallLogCreate, NoteCreate
+from backend.models import UserLogin, UserCreate, UserUpdate, LeadCreate, LeadUpdate, DealCreate, DealUpdate, CallLogCreate, NoteCreate
 from backend.auth import hash_password, verify_password, create_token, get_current_user
 from backend.seed_data import seed_if_empty
 
@@ -294,7 +294,37 @@ def list_users(user: dict = Depends(require_auth)):
 
 @app.post("/api/users")
 def create_user(data: UserCreate, user: dict = Depends(require_admin)):
-    return Repository.create_user(data.name, data.email, hash_password(data.password), data.role)
+    created = Repository.create_user(data.name, data.email, hash_password(data.password), data.role)
+    if created and 'password_hash' in created:
+        del created['password_hash']
+    return created
+
+@app.put("/api/users/{id}")
+def update_user(id: str, data: UserUpdate, user: dict = Depends(require_admin)):
+    target = Repository.get_user(id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    update_data = {}
+    if data.name: update_data['name'] = data.name
+    if data.email: update_data['email'] = data.email
+    if data.role: update_data['role'] = data.role
+    if data.password: update_data['password_hash'] = hash_password(data.password)
+    
+    updated = Repository.update_user(id, update_data)
+    if updated and 'password_hash' in updated:
+        del updated['password_hash']
+    return updated
+
+@app.delete("/api/users/{id}")
+def delete_user(id: str, user: dict = Depends(require_admin)):
+    if id == user.get('user_id'):
+        raise HTTPException(status_code=400, detail="Cannot delete your own active administrator account")
+    target = Repository.get_user(id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    Repository.delete_user(id)
+    return {"status": "success", "message": f"User {target['name']} deleted successfully"}
 
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 static_dir = os.path.join(base_dir, 'static')
