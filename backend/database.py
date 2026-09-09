@@ -148,8 +148,40 @@ class Repository:
         return Repository.get_user(user_id)
 
     @staticmethod
+    def update_user(user_id: str, data: dict):
+        current = Repository.get_user(user_id)
+        if not current:
+            return None
+        updates = []
+        params = []
+        for key in ['name', 'email', 'role', 'password_hash']:
+            if key in data and data[key] is not None:
+                updates.append(f"{key} = ?")
+                params.append(data[key])
+        if updates:
+            query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+            params.append(user_id)
+            Repository._execute(query, tuple(params), commit=True)
+        return Repository.get_user(user_id)
+
+    @staticmethod
+    def delete_user(user_id: str):
+        Repository._execute("UPDATE leads SET assigned_to = NULL WHERE assigned_to = ?", (user_id,), commit=True)
+        Repository._execute("UPDATE deals SET assigned_to = NULL WHERE assigned_to = ?", (user_id,), commit=True)
+        Repository._execute("DELETE FROM users WHERE id = ?", (user_id,), commit=True)
+
+    @staticmethod
     def list_users():
-        return Repository._execute("SELECT id, name, email, role, created_at FROM users", fetchall=True)
+        users = Repository._execute("SELECT id, name, email, role, created_at FROM users ORDER BY created_at ASC", fetchall=True)
+        for u in users:
+            uid = u['id']
+            lead_res = Repository._execute("SELECT COUNT(*) as count FROM leads WHERE assigned_to = ?", (uid,), fetchone=True)
+            u['assigned_leads_count'] = lead_res['count'] if lead_res else 0
+
+            deal_res = Repository._execute("SELECT COUNT(*) as count, COALESCE(SUM(value), 0) as total_val FROM deals WHERE assigned_to = ?", (uid,), fetchone=True)
+            u['assigned_deals_count'] = deal_res['count'] if deal_res else 0
+            u['pipeline_value'] = float(deal_res['total_val']) if deal_res else 0.0
+        return users
 
     @staticmethod
     def create_lead(data: dict):
