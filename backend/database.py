@@ -27,6 +27,9 @@ def init_db():
             business_name TEXT,
             phone TEXT,
             email TEXT,
+            city TEXT,
+            temperature TEXT DEFAULT 'warm',
+            call_stage TEXT DEFAULT 'first_call',
             source TEXT,
             status TEXT,
             assigned_to TEXT,
@@ -36,6 +39,7 @@ def init_db():
             deal_value REAL,
             next_action TEXT,
             next_action_date TEXT,
+            last_update_notes TEXT,
             last_contacted_at TIMESTAMP,
             created_at TIMESTAMP,
             updated_at TIMESTAMP,
@@ -47,6 +51,7 @@ def init_db():
             title TEXT,
             value REAL,
             stage TEXT,
+            city TEXT,
             assigned_to TEXT,
             expected_close TEXT,
             notes TEXT,
@@ -76,6 +81,25 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         );
     ''')
+
+    # Safe migrations for existing DBs
+    lead_cols = [
+        ("city", "TEXT"),
+        ("temperature", "TEXT DEFAULT 'warm'"),
+        ("call_stage", "TEXT DEFAULT 'first_call'"),
+        ("last_update_notes", "TEXT")
+    ]
+    for col, col_type in lead_cols:
+        try:
+            c.execute(f"ALTER TABLE leads ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
+    try:
+        c.execute("ALTER TABLE deals ADD COLUMN city TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -132,20 +156,28 @@ class Repository:
         lead_id = 'lead_' + uuid.uuid4().hex[:8]
         now = Repository.now()
         Repository._execute(
-            """INSERT INTO leads (id, name, business_name, phone, email, source, status, assigned_to, 
-            meta_form_id, meta_ad_name, priority, deal_value, next_action, next_action_date, 
+            """INSERT INTO leads (id, name, business_name, phone, email, city, temperature, call_stage, source, status, assigned_to, 
+            meta_form_id, meta_ad_name, priority, deal_value, next_action, next_action_date, last_update_notes, 
             last_contacted_at, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 lead_id, data.get('name'), data.get('business_name'), data.get('phone'), data.get('email'),
+                data.get('city'), data.get('temperature', 'warm'), data.get('call_stage', 'first_call'),
                 data.get('source', 'manual'), data.get('status', 'new'), data.get('assigned_to'),
                 data.get('meta_form_id'), data.get('meta_ad_name'), data.get('priority', 'medium'),
-                data.get('deal_value'), data.get('next_action'), data.get('next_action_date'),
+                data.get('deal_value'), data.get('next_action'), data.get('next_action_date'), data.get('last_update_notes'),
                 None, now, now
             ),
             commit=True
         )
         return Repository.get_lead(lead_id)
+
+    @staticmethod
+    def bulk_create_leads(leads_list: list):
+        created = []
+        for d in leads_list:
+            created.append(Repository.create_lead(d))
+        return created
 
     @staticmethod
     def get_lead(lead_id: str):
@@ -197,11 +229,11 @@ class Repository:
         deal_id = 'deal_' + uuid.uuid4().hex[:8]
         now = Repository.now()
         Repository._execute(
-            """INSERT INTO deals (id, lead_id, title, value, stage, assigned_to, expected_close, notes, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO deals (id, lead_id, title, value, stage, city, assigned_to, expected_close, notes, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 deal_id, data.get('lead_id'), data.get('title'), data.get('value'),
-                data.get('stage', 'discovery'), data.get('assigned_to'),
+                data.get('stage', 'discovery'), data.get('city'), data.get('assigned_to'),
                 data.get('expected_close'), data.get('notes'), now, now
             ),
             commit=True
