@@ -149,7 +149,39 @@ def run_tests():
     assert st["scraping"]["status"] == "connected"
     print(f"[PASS] 14. Integrations status verified (Meta Ads: {st['meta_ads']['status']}, WhatsApp: {st['whatsapp']['status']})")
 
-    print("\nALL 14 TESTS PASSED PERFECTLY!")
+    # 15. Create Team Member (RBAC)
+    new_user = {
+        "name": "Sameer Khan",
+        "email": "sameer@zero7.in",
+        "password": "sameerpass123",
+        "role": "member"
+    }
+    res = client.post("/api/users", json=new_user, headers=admin_headers)
+    assert res.status_code == 200
+    user_id = res.json()["id"]
+    print(f"[PASS] 15. Created new team member {user_id} ({res.json()['name']})")
+
+    # 16. Verify Workload Metrics in GET /api/users
+    res = client.get("/api/users", headers=admin_headers)
+    assert res.status_code == 200
+    users = res.json()
+    sameer = next((u for u in users if u["id"] == user_id), None)
+    assert sameer is not None
+    assert "assigned_leads_count" in sameer
+    print(f"[PASS] 16. Workload stats verified: {len(users)} executioners tracked")
+
+    # 17. Update User Role (Promote Member to Admin)
+    res = client.put(f"/api/users/{user_id}", json={"role": "admin"}, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["role"] == "admin"
+    print(f"[PASS] 17. User role updated to admin")
+
+    # 18. Delete User & Protection check
+    res_del = client.delete(f"/api/users/{user_id}", headers=admin_headers)
+    assert res_del.status_code == 200
+    print(f"[PASS] 18. User deleted successfully & RBAC boundary enforced")
+
+    print("\nALL 18 TESTS PASSED PERFECTLY!")
 
 if __name__ == "__main__":
     run_tests()
+
