@@ -1,78 +1,63 @@
-/**
- * API Client & Network Service for COS Theta
- */
-
 const API = {
   async request(endpoint, options = {}) {
-    const url = endpoint.startsWith('http') ? endpoint : endpoint;
+    const token = localStorage.getItem('zero7_token');
     const defaultHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
-
+    if (token) {
+      defaultHeaders['Authorization'] = `Bearer ${token}`;
+    }
+    
     try {
-      const response = await fetch(url, {
+      const response = await fetch(endpoint, {
         ...options,
         headers: {
           ...defaultHeaders,
           ...options.headers
         }
       });
-
+      
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await response.json() : null;
+      
       if (!response.ok) {
-        let errorMsg = `HTTP Error ${response.status}`;
-        try {
-          const errData = await response.json();
-          errorMsg = errData.detail || errData.message || errorMsg;
-        } catch (e) {}
-        throw new Error(errorMsg);
+        if (response.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/token')) {
+          localStorage.removeItem('zero7_token');
+          if (typeof App !== 'undefined' && App.renderLogin) {
+            App.renderLogin();
+          }
+        }
+        throw new Error(data?.detail || data?.message || response.statusText || 'API Error');
       }
-
-      return await response.json();
+      
+      return data;
     } catch (error) {
-      console.error(`API Error [${endpoint}]:`, error);
-      API.showToast(error.message, 'alert');
+      if (!endpoint.includes('/api/auth/me')) {
+        this.showToast(error.message, 'error');
+      }
       throw error;
     }
   },
-
-  get(endpoint) {
-    return this.request(endpoint, { method: 'GET' });
-  },
-
-  post(endpoint, body) {
-    return this.request(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(body)
-    });
-  },
-
-  put(endpoint, body) {
-    return this.request(endpoint, {
-      method: 'PUT',
-      body: JSON.stringify(body)
-    });
-  },
-
-  delete(endpoint) {
-    return this.request(endpoint, { method: 'DELETE' });
-  },
-
-  showToast(message, type = 'normal') {
-    const container = document.getElementById('toast-container') || document.body;
+  
+  async get(endpoint) { return this.request(endpoint); },
+  async post(endpoint, data) { return this.request(endpoint, { method: 'POST', body: JSON.stringify(data) }); },
+  async put(endpoint, data) { return this.request(endpoint, { method: 'PUT', body: JSON.stringify(data) }); },
+  async delete(endpoint) { return this.request(endpoint, { method: 'DELETE' }); },
+  
+  showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
     const toast = document.createElement('div');
-    toast.className = 'toast';
-    if (type === 'alert') {
-      toast.style.borderLeft = '3px solid #e7000b';
-    }
-    toast.innerHTML = `<span>${message}</span>`;
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    
     container.appendChild(toast);
-
+    
     setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.2s ease';
-      setTimeout(() => toast.remove(), 200);
-    }, 3500);
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
   }
 };
