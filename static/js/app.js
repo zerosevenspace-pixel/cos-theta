@@ -127,6 +127,8 @@ const App = {
       this.renderDealDetailPage();
     } else if (this.state.currentView === 'integrations') {
       this.renderIntegrationsPage();
+    } else if (this.state.currentView === 'team') {
+      this.renderTeamPage();
     }
   },
 
@@ -246,6 +248,12 @@ const App = {
                 ${Icons.plug(18)}
                 ${isExpanded ? `<span>Integrations</span>` : ''}
               </button>
+
+              <button class="sidebar-nav-item ${view === 'team' ? 'active' : ''}" 
+                      onclick="App.setView('team')" title="Team & Executioners (RBAC)">
+                ${Icons.users(18)}
+                ${isExpanded ? `<span>Team (${this.state.users.length})</span>` : ''}
+              </button>
             </nav>
           </div>
 
@@ -278,7 +286,8 @@ const App = {
                 ${view === 'leads' ? 'Leads Management' :
                   view === 'lead_detail' ? 'Lead Profile & Activity' :
                   view === 'deals' ? 'Deals Pipeline' :
-                  view === 'deal_detail' ? 'Deal Overview' : 'Integrations & Webhooks'}
+                  view === 'deal_detail' ? 'Deal Overview' :
+                  view === 'team' ? 'Team & Executioners (RBAC)' : 'Integrations & Webhooks'}
               </span>
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
@@ -292,6 +301,10 @@ const App = {
               ` : view === 'deals' ? `
                 <button class="btn btn-primary btn-sm" onclick="App.openAddDealModal()">
                   ${Icons.plus(14)} New Deal
+                </button>
+              ` : view === 'team' && u.role === 'admin' ? `
+                <button class="btn btn-primary btn-sm" onclick="App.openAddMemberModal()">
+                  ${Icons.plus(14)} Add Team Member
                 </button>
               ` : ''}
             </div>
@@ -1191,6 +1204,204 @@ const App = {
   copyText(text) {
     navigator.clipboard.writeText(text);
     API.showToast('Copied to clipboard!', 'info');
+  },
+
+  // ---------------- 5. TEAM & EXECUTIONERS (RBAC) ----------------
+
+  renderTeamPage() {
+    const container = document.getElementById('page-content');
+    if (!container) return;
+
+    const isAdmin = this.state.currentUser?.role === 'admin';
+    const users = this.state.users || [];
+    const totalMembers = users.length;
+    const adminsCount = users.filter(u => u.role === 'admin').length;
+    const closersCount = users.filter(u => u.role === 'member').length;
+    const totalPipeline = this.state.deals.reduce((sum, d) => sum + (d.value || 0), 0);
+
+    container.innerHTML = `
+      <div style="max-width: 1100px; margin: 0 auto; padding: 24px 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+          <div>
+            <h1 style="font-size: 24px; font-weight: 600; letter-spacing: -0.5px;">Team & Executioners</h1>
+            <p style="font-size: 13.5px; color: var(--color-mid-gray); margin-top: 4px;">
+              Manage team members, configure Role-Based Access Control (RBAC), and monitor consultant workloads.
+            </p>
+          </div>
+          ${isAdmin ? `
+            <button class="btn btn-primary" onclick="App.openAddMemberModal()">
+              ${Icons.plus(15)} Add Team Member
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div class="stat-row">
+          <div class="stat-card">
+            <div class="stat-label">Total Executioners</div>
+            <div class="stat-value">${totalMembers}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Administrators</div>
+            <div class="stat-value">${adminsCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Consultants / Closers</div>
+            <div class="stat-value">${closersCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Team Pipeline</div>
+            <div class="stat-value">₹${totalPipeline.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <!-- Team Table -->
+        <div class="table-container" style="margin-top: 24px;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Consultant / Person</th>
+                <th>System Role & Permissions</th>
+                <th>Assigned Leads</th>
+                <th>Active Deals</th>
+                <th>Managed Pipeline Value</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${users.map(u => {
+                const initials = (u.name || 'User').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                const isSelf = this.state.currentUser?.id === u.id;
+                return `
+                  <tr>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="user-avatar">${initials}</div>
+                        <div>
+                          <div style="font-weight: 600; color: var(--color-ink);">${this.escapeHtml(u.name)} ${isSelf ? '<span style="font-size: 11px; color: var(--color-mid-gray); font-weight: 400;">(You)</span>' : ''}</div>
+                          <div style="font-size: 12px; color: var(--color-mid-gray);">${this.escapeHtml(u.email)}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      ${isAdmin && !isSelf ? `
+                        <select class="select" style="width: 150px; height: 32px; font-size: 12px;" onchange="App.handleUpdateUserRole('${u.id}', this.value)">
+                          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option>
+                          <option value="member" ${u.role === 'member' ? 'selected' : ''}>Consultant / Closer</option>
+                        </select>
+                      ` : `
+                        <span class="role-badge ${u.role}">${u.role === 'admin' ? 'Administrator' : 'Consultant / Closer'}</span>
+                      `}
+                    </td>
+                    <td>
+                      <span class="workload-metric" style="cursor: pointer;" onclick="App.filterLeadsByRep('${u.id}')" title="Click to view leads for ${this.escapeHtml(u.name)}">
+                        <strong>${u.assigned_leads_count || 0}</strong> leads &rarr;
+                      </span>
+                    </td>
+                    <td>
+                      <span class="workload-metric">
+                        <strong>${u.assigned_deals_count || 0}</strong> deals
+                      </span>
+                    </td>
+                    <td>
+                      <span style="font-weight: 600; color: var(--color-ink);">₹${(u.pipeline_value || 0).toLocaleString()}</span>
+                    </td>
+                    <td style="text-align: right;">
+                      ${isAdmin && !isSelf ? `
+                        <button class="btn btn-secondary btn-sm" style="color: var(--color-error);" onclick="App.handleDeleteUser('${u.id}', '${this.escapeHtml(u.name)}')">
+                          ${Icons.trash(13)} Remove
+                        </button>
+                      ` : '<span style="color: var(--color-mid-gray); font-size: 12px;">Active</span>'}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  filterLeadsByRep(userId) {
+    this.state.filters.assigned_to = userId;
+    this.setView('leads');
+  },
+
+  openAddMemberModal() {
+    const html = `
+      <div class="modal-header">
+        <h3 style="font-size: 16px; font-weight: 600;">Add Executioner / Team Member</h3>
+        <button class="btn-icon" onclick="App.closeModal()">${Icons.close(18)}</button>
+      </div>
+      <form onsubmit="App.handleAddMember(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" name="name" class="input" placeholder="e.g. Sameer Khan" required>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>Email Address *</label>
+            <input type="email" name="email" class="input" placeholder="sameer@zero7.in" required>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>Temporary Password *</label>
+            <input type="password" name="password" class="input" placeholder="Min 6 characters" required>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>Role & Access Level *</label>
+            <select name="role" class="select" style="width: 100%;">
+              <option value="member" selected>Consultant / Closer (Assigned queue only)</option>
+              <option value="admin">Administrator (Full company access & team management)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Member</button>
+        </div>
+      </form>
+    `;
+    this.openModal(html);
+  },
+
+  async handleAddMember(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+
+    try {
+      await API.post('/api/users', data);
+      API.showToast(`Added ${data.name} to the team!`, 'success');
+      this.closeModal();
+      await this.loadInitialData();
+      this.render();
+    } catch (err) {
+      console.error(err);
+    }
+  },
+
+  async handleUpdateUserRole(userId, newRole) {
+    try {
+      await API.put(`/api/users/${userId}`, { role: newRole });
+      API.showToast('Role updated successfully', 'success');
+      await this.loadInitialData();
+      this.render();
+    } catch (err) {
+      console.error(err);
+    }
+  },
+
+  async handleDeleteUser(userId, userName) {
+    if (!confirm(`Are you sure you want to remove ${userName}? Their assigned leads and deals will be unassigned.`)) return;
+    try {
+      await API.delete(`/api/users/${userId}`);
+      API.showToast(`Removed ${userName}`, 'info');
+      await this.loadInitialData();
+      this.render();
+    } catch (err) {
+      console.error(err);
+    }
   },
 
   // ---------------- MODALS & HELPERS ----------------
