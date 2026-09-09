@@ -1,29 +1,31 @@
-"""
-Authentication, Session Management, and Role-Based Access Control (RBAC).
-"""
+import hashlib
+import json
+import base64
+from fastapi import Request
 
-from typing import Optional, Dict, Any
-from fastapi import Header, HTTPException, status
-from backend.database import DBRepository, verify_password
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
 
+def verify_password(password: str, hashed: str) -> bool:
+    return hash_password(password) == hashed
 
-class AuthService:
-    @staticmethod
-    def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
-        user = DBRepository.get_user_by_username(username)
-        if not user:
-            return None
-        if not verify_password(password, user["password_hash"]):
-            return None
-        return user
+def create_token(user_id: str, role: str) -> str:
+    payload = {"user_id": user_id, "role": role}
+    json_payload = json.dumps(payload)
+    return base64.b64encode(json_payload.encode()).decode()
 
-    @staticmethod
-    def check_business_access(user: Dict[str, Any], requested_business: str) -> bool:
-        if user["role"] == "founder":
-            return True
-        user_biz = user.get("assigned_business", "all")
-        if user_biz == "all":
-            return True
-        if requested_business == "all":
-            return True  # Filtered dynamically
-        return user_biz == requested_business
+def decode_token(token: str) -> dict:
+    try:
+        json_payload = base64.b64decode(token.encode()).decode()
+        return json.loads(json_payload)
+    except Exception:
+        return None
+
+def get_current_user(request: Request) -> dict:
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        token = auth.split(" ")[1]
+        decoded = decode_token(token)
+        if decoded:
+            return decoded
+    return None
