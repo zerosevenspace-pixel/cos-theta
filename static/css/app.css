@@ -898,3 +898,55 @@ textarea.input {
 .status-dot.staged { background-color: #eab308; }
 .status-dot.disabled { background-color: var(--color-mid-gray); }
 
+/* ---------------- TEAM MANAGEMENT & RBAC ---------------- */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-btn);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.role-badge.admin {
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+}
+
+.role-badge.member {
+  background-color: var(--color-surface-alt);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+}
+
+.workload-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.member-card {
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+
