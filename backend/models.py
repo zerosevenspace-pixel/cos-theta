@@ -11,6 +11,12 @@ class UserCreate(BaseModel):
     password: str
     role: str = 'member'
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+
 class LeadCreate(BaseModel):
     name: str
     business_name: Optional[str] = None
