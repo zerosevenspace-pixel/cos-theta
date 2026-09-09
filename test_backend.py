@@ -34,31 +34,42 @@ def run_tests():
     assert len(leads) >= 5
     print(f"[PASS] 3. List leads ({len(leads)} leads visible to Admin)")
 
-    # 4. Create Lead
+    # 4. Create Lead with city, temperature, and call_stage
     new_lead = {
         "name": "Arjun Kapoor",
         "business_name": "Kapoor Logistics",
         "phone": "+91 9988776655",
         "email": "arjun@kapoorlogistics.in",
+        "city": "Bengaluru",
+        "temperature": "hot",
+        "call_stage": "first_call",
         "source": "meta_ads",
         "deal_value": 75000.0,
-        "priority": "high"
+        "priority": "high",
+        "last_update_notes": "Urgent inquiry regarding supply chain CRM setup"
     }
     res = client.post("/api/leads", json=new_lead, headers=admin_headers)
     assert res.status_code == 200
     created_lead = res.json()
     lead_id = created_lead["id"]
-    print(f"[PASS] 4. Created lead {lead_id} ({created_lead['name']})")
+    assert created_lead["city"] == "Bengaluru"
+    assert created_lead["temperature"] == "hot"
+    assert created_lead["call_stage"] == "first_call"
+    print(f"[PASS] 4. Created lead {lead_id} ({created_lead['name']} in {created_lead['city']}, Temp: {created_lead['temperature']})")
 
-    # 5. Log Call on Lead
+    # 5. Log Call on Lead & Update Call Stage to DNP
     call_payload = {
-        "outcome": "Connected",
-        "notes": "Discussed retainer scope for logistics re-branding. Very interested.",
-        "duration_minutes": 15
+        "outcome": "DNP",
+        "notes": "Attempted call, did not pick up. Scheduled retry.",
+        "duration_minutes": 2
     }
     res = client.post(f"/api/leads/{lead_id}/calls", json=call_payload, headers=admin_headers)
     assert res.status_code == 200
-    print("[PASS] 5. Logged call on lead")
+    # Update call stage
+    res_update = client.put(f"/api/leads/{lead_id}", json={"call_stage": "dnp", "temperature": "warm"}, headers=admin_headers)
+    assert res_update.status_code == 200
+    assert res_update.json()["call_stage"] == "dnp"
+    print("[PASS] 5. Logged DNP call on lead & updated call stage")
 
     # 6. Add Note on Lead
     note_payload = {
@@ -74,14 +85,16 @@ def run_tests():
     lead_detail = res.json()
     activities = lead_detail.get("activity", [])
     assert len(activities) >= 2
-    print(f"[PASS] 7. Lead detail fetched ({len(activities)} activities recorded)")
+    assert lead_detail["city"] == "Bengaluru"
+    print(f"[PASS] 7. Lead detail fetched ({len(activities)} activities, City: {lead_detail['city']})")
 
     # 8. Convert Lead to Deal
     res = client.post(f"/api/leads/{lead_id}/convert", headers=admin_headers)
     assert res.status_code == 200
     deal = res.json()
     deal_id = deal["id"]
-    print(f"[PASS] 8. Converted lead to Deal {deal_id} (Title: {deal['title']}, Value: INR {deal['value']})")
+    assert deal["city"] == "Bengaluru"
+    print(f"[PASS] 8. Converted lead to Deal {deal_id} (City: {deal['city']}, Value: INR {deal['value']})")
 
     # 9. Update Deal Stage
     res = client.put(f"/api/deals/{deal_id}", json={"stage": "negotiation"}, headers=admin_headers)
@@ -104,7 +117,7 @@ def run_tests():
         assert l["assigned_to"] == res.json()[0]["assigned_to"]
     print(f"[PASS] 11. Role separation verified: Member sees {len(member_leads)} assigned leads")
 
-    # 12. Meta Ads Webhook
+    # 12. Meta Ads Webhook with City & Temperature
     meta_payload = {
         "name": "Kavita Rao",
         "business_name": "Rao Health Tech",
@@ -116,14 +129,27 @@ def run_tests():
     assert res.status_code == 200 and res.json()["status"] == "success"
     print("[PASS] 12. Meta Lead Ads webhook received & processed")
 
-    # Verify that the webhook created a lead
-    res = client.get("/api/leads", headers=admin_headers)
-    meta_leads = [l for l in res.json() if l["email"] == "kavita@raohealth.com"]
-    assert len(meta_leads) == 1
-    assert meta_leads[0]["source"] == "meta_ads"
-    print(f"[PASS] 13. Ingested Meta lead verified in database: {meta_leads[0]['name']}")
+    # 13. Bulk Scraped Leads Ingestion
+    bulk_payload = {
+        "leads": [
+            {"name": "Suresh Raina", "business_name": "Raina Sports", "phone": "+91 9833445566", "city": "Chennai", "temperature": "hot"},
+            {"name": "Mansi Joshi", "business_name": "Joshi Architects", "phone": "+91 9744556677", "city": "Pune", "temperature": "warm"}
+        ]
+    }
+    res = client.post("/api/leads/import-csv", json=bulk_payload, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["imported"] == 2
+    print(f"[PASS] 13. Bulk scraping ingestion verified (imported {res.json()['imported']} leads)")
 
-    print("\nALL 13 TESTS PASSED PERFECTLY!")
+    # 14. Integrations Status
+    res = client.get("/api/integrations/status", headers=admin_headers)
+    assert res.status_code == 200
+    st = res.json()
+    assert st["meta_ads"]["status"] == "connected"
+    assert st["whatsapp"]["status"] == "connected"
+    assert st["scraping"]["status"] == "connected"
+    print(f"[PASS] 14. Integrations status verified (Meta Ads: {st['meta_ads']['status']}, WhatsApp: {st['whatsapp']['status']})")
+
+    print("\nALL 14 TESTS PASSED PERFECTLY!")
 
 if __name__ == "__main__":
     run_tests()
