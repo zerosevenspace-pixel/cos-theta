@@ -121,8 +121,9 @@ def convert_lead(id: str, user: dict = Depends(require_auth)):
         "title": deal_title,
         "value": lead.get('deal_value') or 0.0,
         "stage": "proposal",
+        "city": lead.get('city') or "",
         "assigned_to": lead.get('assigned_to') or user.get('user_id'),
-        "notes": f"Converted from lead: {lead.get('name')} ({lead.get('email') or 'No email'})"
+        "notes": f"Converted from lead: {lead.get('name')} ({lead.get('email') or 'No email'}) - {lead.get('city') or 'No city'}"
     })
     Repository.update_lead(id, {"status": "proposal"})
     return deal
@@ -216,6 +217,72 @@ async def receive_meta_webhook(request: Request):
     except Exception as e:
         print("Error processing webhook:", e)
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/integrations/status")
+def get_integrations_status(user: dict = Depends(require_auth)):
+    webhook_url = "http://68.183.92.215/api/webhooks/meta-leads"
+    verify_token = os.getenv("META_VERIFY_TOKEN", "zero7_meta_verify_2026")
+    leads = Repository.list_leads()
+    meta_count = sum(1 for l in leads if l.get('source') == 'meta_ads')
+    scraping_count = sum(1 for l in leads if l.get('source') == 'scraping')
+    return {
+        "meta_ads": {
+            "name": "Meta Ads Lead Webhook",
+            "status": "connected",
+            "webhook_url": webhook_url,
+            "verify_token": verify_token,
+            "leads_received": meta_count,
+            "event_type": "leadgen"
+        },
+        "whatsapp": {
+            "name": "WhatsApp Direct Connect",
+            "status": "connected",
+            "protocol": "Click-to-Chat (wa.me)",
+            "default_country_code": "+91",
+            "message_templates_enabled": True
+        },
+        "scraping": {
+            "name": "B2B Lead Scraping Ingestion",
+            "status": "connected",
+            "endpoint": "/api/leads/import-csv",
+            "leads_ingested": scraping_count,
+            "supported_formats": ["CSV", "JSON"]
+        },
+        "google_drive": {
+            "name": "Google Drive Call Recordings",
+            "status": "staged",
+            "note": "Ready for Google Service Account integration"
+        }
+    }
+
+@app.post("/api/leads/import-csv")
+async def import_csv_leads(request: Request, user: dict = Depends(require_auth)):
+    try:
+        body = await request.json()
+        leads_data = body.get("leads", [])
+        if not leads_data:
+            raise HTTPException(status_code=400, detail="No leads provided in payload")
+        created = []
+        for item in leads_data:
+            lead_dict = {
+                "name": item.get("name") or "Scraped Lead",
+                "business_name": item.get("business_name") or item.get("company", ""),
+                "phone": item.get("phone", ""),
+                "email": item.get("email", ""),
+                "city": item.get("city", ""),
+                "temperature": item.get("temperature", "warm"),
+                "call_stage": item.get("call_stage", "first_call"),
+                "source": "scraping",
+                "status": "new",
+                "priority": item.get("priority", "medium"),
+                "deal_value": float(item.get("deal_value", 0)) if item.get("deal_value") else None,
+                "assigned_to": item.get("assigned_to") or user.get("user_id"),
+                "last_update_notes": item.get("notes") or "Imported from B2B scraping list"
+            }
+            created.append(Repository.create_lead(lead_dict))
+        return {"status": "success", "imported": len(created), "leads": created}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Import failed: {str(e)}")
 
 @app.get("/api/users")
 def list_users(user: dict = Depends(require_auth)):
