@@ -180,7 +180,84 @@ def run_tests():
     assert res_del.status_code == 200
     print(f"[PASS] 18. User deleted successfully & RBAC boundary enforced")
 
-    print("\nALL 18 TESTS PASSED PERFECTLY!")
+    # 19. Meta Ads Lead with Full Channel Intelligence & Creative
+    rich_meta_lead = {
+        "name": "Vikram Sethi",
+        "business_name": "Sethi Wealth Advisory",
+        "phone": "+91 9876501234",
+        "email": "vikram@sethiwealth.com",
+        "city": "Mumbai",
+        "campaign_name": "Mumbai HNI Founders Q3",
+        "adset_name": "Family Offices & CXOs",
+        "ad_name": "Video Ad 04 - Pipeline Audit",
+        "platform": "instagram",
+        "creative": {
+            "thumbnail_url": "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=200",
+            "image_url": "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800",
+            "title": "Struggling to Scale Your Advisory?",
+            "body": "Zero7 helps consulting firms build consistent inbound client flow."
+        },
+        "form_answers": [
+            {"question": "Monthly Revenue", "answer": "₹25L - ₹50L"},
+            {"question": "Primary Goal", "answer": "Hire dedicated high-ticket closers"}
+        ]
+    }
+    res = client.post("/api/webhooks/meta-leads", json=rich_meta_lead)
+    assert res.status_code == 200
+    meta_lead_id = res.json()["lead_id"]
+    lead_res = client.get(f"/api/leads/{meta_lead_id}", headers=admin_headers)
+    assert lead_res.status_code == 200
+    meta_lead = lead_res.json()
+    assert meta_lead["source"] == "meta_ads"
+    assert meta_lead["channel_data"] is not None
+    assert meta_lead["channel_data"]["campaign_name"] == "Mumbai HNI Founders Q3"
+    assert meta_lead["channel_data"]["creative"]["title"] == "Struggling to Scale Your Advisory?"
+    assert len(meta_lead["channel_data"]["form_answers"]) == 2
+    print(f"[PASS] 19. Meta Ads full channel intelligence & creative thumbnail verified")
+
+    # 20. B2B Scraped Lead with Firmographic Channel Data
+    scraped_lead = {
+        "leads": [{
+            "name": "Ananya Roy",
+            "business_name": "Roy Architecture & Urbanists",
+            "phone": "+91 9988776655",
+            "email": "ananya@royurban.in",
+            "city": "Kolkata",
+            "website": "https://royurban.in",
+            "linkedin_url": "https://linkedin.com/company/roy-urban",
+            "industry": "Urban Architecture",
+            "query": "Top Urban Planners Kolkata"
+        }]
+    }
+    res = client.post("/api/leads/import-csv", json=scraped_lead, headers=admin_headers)
+    assert res.status_code == 200
+    scraped_lead_id = res.json()["leads"][0]["id"]
+    lead_res = client.get(f"/api/leads/{scraped_lead_id}", headers=admin_headers)
+    assert lead_res.status_code == 200
+    sc_lead = lead_res.json()
+    assert sc_lead["source"] == "scraping"
+    assert sc_lead["channel_data"] is not None
+    assert sc_lead["channel_data"]["website"] == "https://royurban.in"
+    assert sc_lead["channel_data"]["linkedin_url"] == "https://linkedin.com/company/roy-urban"
+    assert sc_lead["channel_data"]["scraped_query"] == "Top Urban Planners Kolkata"
+    print(f"[PASS] 20. Scraped B2B firmographic intelligence (Website, LinkedIn) verified")
+
+    # 21. Manual Lead with Zero Clutter (channel_data is None)
+    manual_lead = {
+        "name": "Harish Patel",
+        "business_name": "Patel Logistics",
+        "phone": "+91 9112233445",
+        "source": "manual"
+    }
+    res = client.post("/api/leads", json=manual_lead, headers=admin_headers)
+    assert res.status_code == 200
+    man_lead_id = res.json()["id"]
+    lead_res = client.get(f"/api/leads/{man_lead_id}", headers=admin_headers)
+    assert lead_res.status_code == 200
+    assert lead_res.json()["channel_data"] is None
+    print(f"[PASS] 21. Zero-clutter guarantee: Manual lead has channel_data = None")
+
+    print("\nALL 21 TESTS PASSED PERFECTLY!")
 
 if __name__ == "__main__":
     run_tests()
