@@ -148,22 +148,14 @@ const App = {
           <form id="login-form">
             <div class="form-group">
               <label>Email Address</label>
-              <input type="email" id="login-email" name="email" class="input" value="abhijeet@zero7.in" required autocomplete="username">
+              <input type="email" id="login-email" name="email" class="input" placeholder="name@zero7.in" required autocomplete="username">
             </div>
             <div class="form-group" style="margin-top: 14px;">
               <label>Password</label>
-              <input type="password" id="login-password" name="password" class="input" value="admin123" required autocomplete="current-password">
+              <input type="password" id="login-password" name="password" class="input" placeholder="••••••••" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px; justify-content: center;">Sign In to Zero7 CRM</button>
           </form>
-
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-hairline); font-size: 12px; color: var(--color-mid-gray); line-height: 1.6;">
-            <div style="font-weight: 600; margin-bottom: 6px; color: var(--color-ink);">Quick Switch Accounts:</div>
-            <div style="display: flex; gap: 8px;">
-              <button type="button" class="btn btn-secondary" style="font-size: 11.5px; padding: 4px 10px;" onclick="App.fillLogin('abhijeet@zero7.in', 'admin123')">Abhijit (Admin)</button>
-              <button type="button" class="btn btn-secondary" style="font-size: 11.5px; padding: 4px 10px;" onclick="App.fillLogin('shailesh@zero7.in', 'member123')">Shailesh (Rep)</button>
-            </div>
-          </div>
         </div>
       </div>
     `;
@@ -292,9 +284,6 @@ const App = {
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
               ${view === 'leads' ? `
-                <button class="btn btn-secondary btn-sm" onclick="App.triggerWebhookTest()" title="Simulate incoming Meta Lead Ads lead">
-                  ${Icons.target(14)} Test Meta Ad
-                </button>
                 <button class="btn btn-primary btn-sm" onclick="App.openAddLeadModal()">
                   ${Icons.plus(14)} Add Lead
                 </button>
