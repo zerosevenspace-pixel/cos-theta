@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from typing import Optional
 import os
 
@@ -179,8 +179,8 @@ def verify_meta_webhook(request: Request):
     challenge = request.query_params.get("hub.challenge")
     expected_token = os.getenv("META_VERIFY_TOKEN", "zero7_meta_verify_2026")
     if mode == "subscribe" and token == expected_token:
-        return int(challenge) if challenge and challenge.isdigit() else challenge
-    return "OK"
+        return PlainTextResponse(content=str(challenge))
+    return PlainTextResponse(content="OK")
 
 @app.post("/api/webhooks/meta-leads")
 async def receive_meta_webhook(request: Request):
