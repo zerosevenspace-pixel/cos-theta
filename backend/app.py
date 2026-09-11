@@ -409,7 +409,12 @@ def create_user(data: UserCreate, user: dict = Depends(require_admin)):
     return created
 
 @app.put("/api/users/{id}")
-def update_user(id: str, data: UserUpdate, user: dict = Depends(require_admin)):
+def update_user(id: str, data: UserUpdate, user: dict = Depends(require_auth)):
+    is_admin = user.get("role") == "admin"
+    is_self = user.get("user_id") == id
+    if not is_admin and not is_self:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this user")
+
     target = Repository.get_user(id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -417,7 +422,10 @@ def update_user(id: str, data: UserUpdate, user: dict = Depends(require_admin)):
     update_data = {}
     if data.name: update_data['name'] = data.name
     if data.email: update_data['email'] = data.email
-    if data.role: update_data['role'] = data.role
+    if data.role:
+        if not is_admin and data.role != target['role']:
+            raise HTTPException(status_code=403, detail="Only administrators can modify system roles")
+        update_data['role'] = data.role
     if data.password: update_data['password_hash'] = hash_password(data.password)
     
     updated = Repository.update_user(id, update_data)
