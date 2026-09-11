@@ -5,8 +5,8 @@ def seed_if_empty():
     users = Repository.list_users()
     if not users:
         print("Initializing production users...")
-        Repository.create_user("Abhijit", "abhijeet@zero7.in", hash_password("admin123"), "admin")
-        Repository.create_user("Shailesh", "shailesh@zero7.in", hash_password("member123"), "member")
+        Repository.create_user("Abhijeet", "abhijeet@zero7.space", hash_password("admin123"), "admin")
+        Repository.create_user("Shailesh", "shailesh@zero7.space", hash_password("member123"), "member")
         print("Production users created successfully.")
     else:
         print("Database already contains users.")
