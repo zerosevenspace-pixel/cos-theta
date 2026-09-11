@@ -38,6 +38,11 @@ def login(data: UserLogin):
 def login_token(data: UserLogin):
     return login(data)
 
+@app.get("/api/health")
+def health_check():
+    domain = os.getenv("APP_DOMAIN", "cos.zero7.space")
+    return {"status": "ok", "service": "Zero7 CRM", "domain": domain}
+
 @app.get("/api/auth/me")
 def me(user: dict = Depends(get_current_user)):
     if not user:
@@ -220,7 +225,10 @@ async def receive_meta_webhook(request: Request):
 
 @app.get("/api/integrations/status")
 def get_integrations_status(user: dict = Depends(require_auth)):
-    webhook_url = "http://68.183.92.215/api/webhooks/meta-leads"
+    domain = os.getenv("APP_DOMAIN", "cos.zero7.space")
+    proto = "https" if not domain.startswith("localhost") and not domain.startswith("127.0.0.1") else "http"
+    base_url = domain if domain.startswith("http") else f"{proto}://{domain}"
+    webhook_url = f"{base_url}/api/webhooks/meta-leads"
     verify_token = os.getenv("META_VERIFY_TOKEN", "zero7_meta_verify_2026")
     leads = Repository.list_leads()
     meta_count = sum(1 for l in leads if l.get('source') == 'meta_ads')
