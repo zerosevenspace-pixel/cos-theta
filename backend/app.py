@@ -187,20 +187,50 @@ async def receive_meta_webhook(request: Request):
     payload = await request.json()
     try:
         if "name" in payload:
+            channel_data = payload.get("channel_data") or {}
+            for key in ["campaign_name", "adset_name", "ad_name", "ad_id", "platform", "form_name", "form_id"]:
+                if key in payload and key not in channel_data:
+                    channel_data[key] = payload[key]
+            
+            if "creative" in payload:
+                channel_data["creative"] = payload["creative"]
+            elif "creative_thumbnail_url" in payload or "thumbnail_url" in payload:
+                channel_data["creative"] = {
+                    "thumbnail_url": payload.get("creative_thumbnail_url") or payload.get("thumbnail_url"),
+                    "image_url": payload.get("image_url"),
+                    "title": payload.get("ad_title") or payload.get("ad_name"),
+                    "body": payload.get("ad_body") or payload.get("ad_copy")
+                }
+            
+            form_answers = payload.get("form_answers") or payload.get("custom_fields")
+            if form_answers:
+                if isinstance(form_answers, dict):
+                    channel_data["form_answers"] = [{"question": k, "answer": str(v)} for k, v in form_answers.items()]
+                elif isinstance(form_answers, list):
+                    channel_data["form_answers"] = form_answers
+
             lead = Repository.create_lead({
                 "name": payload.get("name"),
                 "business_name": payload.get("business_name", ""),
                 "phone": payload.get("phone", ""),
                 "email": payload.get("email", ""),
+                "city": payload.get("city", ""),
+                "temperature": payload.get("temperature", "hot"),
+                "call_stage": payload.get("call_stage", "first_call"),
                 "source": "meta_ads",
-                "meta_ad_name": payload.get("ad_name", "Meta Lead Ads Campaign"),
+                "meta_form_id": payload.get("form_id") or channel_data.get("form_id") or payload.get("meta_form_id", ""),
+                "meta_ad_name": payload.get("ad_name") or channel_data.get("ad_name") or payload.get("meta_ad_name", "Meta Lead Ads Campaign"),
                 "status": "new",
-                "next_action": "Follow-up speed to lead call"
+                "priority": payload.get("priority", "high"),
+                "deal_value": float(payload.get("deal_value")) if payload.get("deal_value") else None,
+                "next_action": payload.get("next_action", "Speed to lead call (< 5 mins)"),
+                "channel_data": channel_data if channel_data else None
             })
             return {"status": "success", "lead_id": lead["id"]}
 
         entries = payload.get("entry", [])
         created_count = 0
+        token = os.getenv("META_PAGE_ACCESS_TOKEN")
         for entry in entries:
             changes = entry.get("changes", [])
             for change in changes:
@@ -208,14 +238,78 @@ async def receive_meta_webhook(request: Request):
                 leadgen_id = val.get("leadgen_id")
                 form_id = val.get("form_id")
                 ad_id = val.get("ad_id")
+                page_id = val.get("page_id")
+                
+                channel_data = {
+                    "leadgen_id": leadgen_id,
+                    "form_id": form_id,
+                    "ad_id": ad_id,
+                    "page_id": page_id,
+                    "platform": "instagram" if "instagram" in str(val).lower() else "facebook"
+                }
+                lead_name = f"Meta Lead {leadgen_id}"
+                lead_phone = ""
+                lead_email = ""
+                lead_city = ""
+                lead_business = ""
+                ad_name = f"Ad {ad_id}" if ad_id else "Meta Instant Form"
+
+                if token and leadgen_id:
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient(timeout=8.0) as client:
+                            res = await client.get(f"https://graph.facebook.com/v20.0/{leadgen_id}?access_token={token}")
+                            if res.status_code == 200:
+                                ldata = res.json()
+                                field_map = {f.get("name"): (f.get("values", [""])[0] if f.get("values") else "") for f in ldata.get("field_data", [])}
+                                lead_name = field_map.get("full_name") or field_map.get("name") or lead_name
+                                lead_phone = field_map.get("phone_number") or field_map.get("phone") or ""
+                                lead_email = field_map.get("email") or ""
+                                lead_city = field_map.get("city") or ""
+                                lead_business = field_map.get("company_name") or field_map.get("business_name") or ""
+                                
+                                standard_keys = {"full_name", "name", "phone_number", "phone", "email", "city", "company_name", "business_name"}
+                                custom_qas = [{"question": k, "answer": str(v)} for k, v in field_map.items() if k not in standard_keys and v]
+                                if custom_qas:
+                                    channel_data["form_answers"] = custom_qas
+                                
+                                if ad_id:
+                                    ad_res = await client.get(f"https://graph.facebook.com/v20.0/{ad_id}?fields=name,campaign{{name}},adset{{name}},creative{{name,title,body,image_url,thumbnail_url}}&access_token={token}")
+                                    if ad_res.status_code == 200:
+                                        ad_info = ad_res.json()
+                                        ad_name = ad_info.get("name", ad_name)
+                                        channel_data["ad_name"] = ad_name
+                                        if "campaign" in ad_info:
+                                            channel_data["campaign_name"] = ad_info["campaign"].get("name")
+                                        if "adset" in ad_info:
+                                            channel_data["adset_name"] = ad_info["adset"].get("name")
+                                        if "creative" in ad_info:
+                                            cr = ad_info["creative"]
+                                            channel_data["creative"] = {
+                                                "thumbnail_url": cr.get("thumbnail_url") or cr.get("image_url"),
+                                                "image_url": cr.get("image_url"),
+                                                "title": cr.get("title") or cr.get("name"),
+                                                "body": cr.get("body")
+                                            }
+                    except Exception as ex:
+                        print("Error fetching Meta Graph API details:", ex)
+
                 if leadgen_id:
                     lead = Repository.create_lead({
-                        "name": f"Meta Lead {leadgen_id}",
+                        "name": lead_name,
+                        "business_name": lead_business,
+                        "phone": lead_phone,
+                        "email": lead_email,
+                        "city": lead_city,
+                        "temperature": "hot",
+                        "call_stage": "first_call",
                         "source": "meta_ads",
                         "meta_form_id": form_id or leadgen_id,
-                        "meta_ad_name": f"Ad {ad_id}" if ad_id else "Meta Ad Form",
+                        "meta_ad_name": ad_name,
                         "status": "new",
-                        "next_action": "Speed to lead call"
+                        "priority": "high",
+                        "next_action": "Speed to lead call (< 5 mins)",
+                        "channel_data": channel_data
                     })
                     created_count += 1
         return {"status": "success", "created": created_count}
@@ -272,6 +366,12 @@ async def import_csv_leads(request: Request, user: dict = Depends(require_auth))
             raise HTTPException(status_code=400, detail="No leads provided in payload")
         created = []
         for item in leads_data:
+            scraping_data = item.get("channel_data") or {}
+            for k in ["website", "linkedin_url", "linkedin", "industry", "employee_count", "employees", "rating", "reviews", "query", "scraped_query", "batch"]:
+                if k in item and item[k]:
+                    clean_k = "linkedin_url" if k == "linkedin" else ("employee_count" if k == "employees" else ("scraped_query" if k == "query" else k))
+                    scraping_data[clean_k] = item[k]
+
             lead_dict = {
                 "name": item.get("name") or "Scraped Lead",
                 "business_name": item.get("business_name") or item.get("company", ""),
@@ -285,7 +385,8 @@ async def import_csv_leads(request: Request, user: dict = Depends(require_auth))
                 "priority": item.get("priority", "medium"),
                 "deal_value": float(item.get("deal_value", 0)) if item.get("deal_value") else None,
                 "assigned_to": item.get("assigned_to") or user.get("user_id"),
-                "last_update_notes": item.get("notes") or "Imported from B2B scraping list"
+                "last_update_notes": item.get("notes") or "Imported from B2B scraping list",
+                "channel_data": scraping_data if scraping_data else None
             }
             created.append(Repository.create_lead(lead_dict))
         return {"status": "success", "imported": len(created), "leads": created}
