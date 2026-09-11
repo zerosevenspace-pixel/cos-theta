@@ -251,16 +251,16 @@ const App = {
 
           <div class="sidebar-footer">
             ${isExpanded ? `
-              <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; border-radius: var(--radius-sm);" onclick="App.openEditUserModal('${u.id}')" title="Click to edit profile & change password">
                 <div class="user-avatar" style="width: 28px; height: 28px; font-size: 11px;">${initials}</div>
                 <div style="flex: 1; overflow: hidden;">
-                  <div style="font-size: 13px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${u.name}</div>
-                  <div style="font-size: 11px; color: var(--color-mid-gray); text-transform: uppercase;">${u.role}</div>
+                  <div style="font-size: 13px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${this.escapeHtml(u.name)}</div>
+                  <div style="font-size: 11px; color: var(--color-mid-gray); text-transform: uppercase;">${u.role} &bull; Edit</div>
                 </div>
               </div>
             ` : `
-              <div style="display: flex; justify-content: center; margin-bottom: 6px;">
-                <div class="user-avatar" style="width: 28px; height: 28px; font-size: 11px;" title="${u.name} (${u.role})">${initials}</div>
+              <div style="display: flex; justify-content: center; margin-bottom: 6px; cursor: pointer;" onclick="App.openEditUserModal('${u.id}')" title="${this.escapeHtml(u.name)} - Click to edit profile & change password">
+                <div class="user-avatar" style="width: 28px; height: 28px; font-size: 11px;">${initials}</div>
               </div>
             `}
             <button class="sidebar-nav-item" onclick="App.logout()" title="Logout" style="color: var(--color-error);">
@@ -1552,11 +1552,16 @@ const App = {
                       <span style="font-weight: 600; color: var(--color-ink);">₹${(u.pipeline_value || 0).toLocaleString()}</span>
                     </td>
                     <td style="text-align: right;">
-                      ${isAdmin && !isSelf ? `
-                        <button class="btn btn-secondary btn-sm" style="color: var(--color-error);" onclick="App.handleDeleteUser('${u.id}', '${this.escapeHtml(u.name)}')">
-                          ${Icons.trash(13)} Remove
+                      <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="App.openEditUserModal('${u.id}')" title="Edit name, email, role, or change password">
+                          ${Icons.edit(12)} Edit
                         </button>
-                      ` : '<span style="color: var(--color-mid-gray); font-size: 12px;">Active</span>'}
+                        ${isAdmin && !isSelf ? `
+                          <button class="btn btn-secondary btn-sm" style="color: var(--color-error);" onclick="App.handleDeleteUser('${u.id}', '${this.escapeHtml(u.name)}')">
+                            ${Icons.trash(12)} Remove
+                          </button>
+                        ` : ''}
+                      </div>
                     </td>
                   </tr>
                 `;
@@ -1573,6 +1578,84 @@ const App = {
     this.setView('leads');
   },
 
+  openEditUserModal(userId) {
+    const user = (this.state.users || []).find(u => u.id === userId) || (this.state.currentUser?.id === userId ? this.state.currentUser : null);
+    if (!user) return;
+
+    const isAdmin = this.state.currentUser?.role === 'admin';
+    const isSelf = this.state.currentUser?.id === user.id;
+
+    const html = `
+      <div class="modal-header">
+        <h3 style="font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+          ${Icons.edit(16)} Edit Member & Credentials: ${this.escapeHtml(user.name)}
+        </h3>
+        <button class="btn-icon" onclick="App.closeModal()">${Icons.close(18)}</button>
+      </div>
+      <form onsubmit="App.handleSaveUser(event, '${user.id}')">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" name="name" class="input" value="${this.escapeHtml(user.name)}" required>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>Email Address *</label>
+            <input type="email" name="email" class="input" value="${this.escapeHtml(user.email)}" required>
+          </div>
+          ${isAdmin ? `
+            <div class="form-group" style="margin-top: 12px;">
+              <label>System Role & Permissions</label>
+              <select name="role" class="select" style="width: 100%;" ${isSelf && user.role === 'admin' ? 'title="You cannot demote your own administrator account"' : ''}>
+                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrator (Full company access & team management)</option>
+                <option value="member" ${user.role === 'member' ? 'selected' : ''}>Consultant / Closer (Lead execution queue)</option>
+              </select>
+            </div>
+          ` : ''}
+          <div class="form-group" style="margin-top: 12px;">
+            <label>Change Password <span style="font-weight: 400; color: var(--color-mid-gray); font-size: 11.5px;">(Leave blank to keep existing password)</span></label>
+            <input type="password" name="password" class="input" placeholder="Enter new password to change...">
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    `;
+    this.openModal(html);
+  },
+
+  async handleSaveUser(e, userId) {
+    e.preventDefault();
+    const form = e.target;
+    const name = form.name.value.trim();
+    const email = form.email.value.trim();
+    const role = form.role ? form.role.value : undefined;
+    const password = form.password ? form.password.value.trim() : '';
+
+    const payload = { name, email };
+    if (role) payload.role = role;
+    if (password) payload.password = password;
+
+    try {
+      const updated = await API.put(`/api/users/${userId}`, payload);
+      API.showToast(`Updated ${updated.name} successfully!`, 'success');
+      this.closeModal();
+
+      if (this.state.currentUser?.id === userId) {
+        this.state.currentUser = { ...this.state.currentUser, ...updated };
+      }
+      await this.loadInitialData();
+      if (this.state.currentView === 'team') {
+        this.renderTeamPage();
+      } else {
+        this.render();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  },
+
   openAddMemberModal() {
     const html = `
       <div class="modal-header">
@@ -1587,7 +1670,7 @@ const App = {
           </div>
           <div class="form-group" style="margin-top: 12px;">
             <label>Email Address *</label>
-            <input type="email" name="email" class="input" placeholder="sameer@zero7.in" required>
+            <input type="email" name="email" class="input" placeholder="name@zero7.space" required>
           </div>
           <div class="form-group" style="margin-top: 12px;">
             <label>Temporary Password *</label>
