@@ -1,6 +1,7 @@
 import sqlite3
 import uuid
 import datetime
+import json
 
 DB_PATH = 'zero7_crm.db'
 
@@ -87,7 +88,8 @@ def init_db():
         ("city", "TEXT"),
         ("temperature", "TEXT DEFAULT 'warm'"),
         ("call_stage", "TEXT DEFAULT 'first_call'"),
-        ("last_update_notes", "TEXT")
+        ("last_update_notes", "TEXT"),
+        ("channel_data", "TEXT")
     ]
     for col, col_type in lead_cols:
         try:
@@ -184,21 +186,44 @@ class Repository:
         return users
 
     @staticmethod
+    def _format_lead(lead):
+        if not lead:
+            return None
+        d = dict(lead)
+        if 'channel_data' in d and d['channel_data']:
+            if isinstance(d['channel_data'], str):
+                try:
+                    d['channel_data'] = json.loads(d['channel_data'])
+                except Exception:
+                    pass
+        else:
+            d['channel_data'] = None
+        return d
+
+    @staticmethod
     def create_lead(data: dict):
         lead_id = 'lead_' + uuid.uuid4().hex[:8]
         now = Repository.now()
+        channel_data = data.get('channel_data')
+        if isinstance(channel_data, dict):
+            channel_data_str = json.dumps(channel_data)
+        elif isinstance(channel_data, str):
+            channel_data_str = channel_data
+        else:
+            channel_data_str = None
+
         Repository._execute(
             """INSERT INTO leads (id, name, business_name, phone, email, city, temperature, call_stage, source, status, assigned_to, 
             meta_form_id, meta_ad_name, priority, deal_value, next_action, next_action_date, last_update_notes, 
-            last_contacted_at, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            channel_data, last_contacted_at, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 lead_id, data.get('name'), data.get('business_name'), data.get('phone'), data.get('email'),
                 data.get('city'), data.get('temperature', 'warm'), data.get('call_stage', 'first_call'),
                 data.get('source', 'manual'), data.get('status', 'new'), data.get('assigned_to'),
                 data.get('meta_form_id'), data.get('meta_ad_name'), data.get('priority', 'medium'),
                 data.get('deal_value'), data.get('next_action'), data.get('next_action_date'), data.get('last_update_notes'),
-                None, now, now
+                channel_data_str, None, now, now
             ),
             commit=True
         )
@@ -213,7 +238,8 @@ class Repository:
 
     @staticmethod
     def get_lead(lead_id: str):
-        return Repository._execute("SELECT * FROM leads WHERE id = ?", (lead_id,), fetchone=True)
+        row = Repository._execute("SELECT * FROM leads WHERE id = ?", (lead_id,), fetchone=True)
+        return Repository._format_lead(row)
 
     @staticmethod
     def update_lead(lead_id: str, data: dict):
@@ -224,6 +250,8 @@ class Repository:
         params = []
         for key, val in data.items():
             if val is not None:
+                if key == 'channel_data' and isinstance(val, dict):
+                    val = json.dumps(val)
                 updates.append(f"{key} = ?")
                 params.append(val)
         if updates:
@@ -254,7 +282,8 @@ class Repository:
             if conds:
                 query += " WHERE " + " AND ".join(conds)
         query += " ORDER BY created_at DESC"
-        return Repository._execute(query, tuple(params), fetchall=True)
+        rows = Repository._execute(query, tuple(params), fetchall=True)
+        return [Repository._format_lead(r) for r in rows]
 
     @staticmethod
     def create_deal(data: dict):
