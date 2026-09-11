@@ -488,6 +488,228 @@ const App = {
     `;
   },
 
+  renderChannelIntelligenceCard(lead) {
+    if (!lead) return '';
+    const src = lead.source || 'manual';
+    const ch = lead.channel_data || {};
+    
+    const hasMeta = src === 'meta_ads' || lead.meta_ad_name || lead.meta_form_id || ch.campaign_name || ch.ad_name;
+    const hasScraping = src === 'scraping' && (ch.website || ch.linkedin_url || ch.industry || ch.scraped_query);
+    const hasReferral = src === 'referral' && (ch.referred_by || ch.relationship);
+
+    if (!hasMeta && !hasScraping && !hasReferral && Object.keys(ch).length === 0) {
+      return '';
+    }
+
+    if (hasMeta) {
+      const campaign = ch.campaign_name || 'Standard Meta Campaign';
+      const adset = ch.adset_name || 'Default Audience Segment';
+      const ad = ch.ad_name || lead.meta_ad_name || 'Lead Ad';
+      const form = ch.form_name || (lead.meta_form_id ? `Form ID: ${lead.meta_form_id}` : 'Instant Form');
+      const platform = ch.platform ? (ch.platform.toLowerCase().includes('instagram') ? 'Instagram' : 'Facebook') : 'Meta Ads';
+      
+      const creative = ch.creative || {};
+      const thumbUrl = creative.thumbnail_url || creative.image_url;
+      const creativeTitle = creative.title || ad;
+      const creativeBody = creative.body || '';
+      const formAnswers = ch.form_answers || [];
+
+      return `
+        <div class="channel-intelligence-card">
+          <div class="channel-card-header">
+            <div class="channel-card-title">
+              ${Icons.target(14)} Meta Ads Attribution
+            </div>
+            <span class="channel-source-tag">
+              ${platform}
+            </span>
+          </div>
+
+          <div class="channel-meta-grid">
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Campaign</div>
+              <div class="channel-meta-value">${this.escapeHtml(campaign)}</div>
+            </div>
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Ad Set</div>
+              <div class="channel-meta-value">${this.escapeHtml(adset)}</div>
+            </div>
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Ad Creative Name</div>
+              <div class="channel-meta-value">${this.escapeHtml(ad)}</div>
+            </div>
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Inbound Form</div>
+              <div class="channel-meta-value">${this.escapeHtml(form)}</div>
+            </div>
+          </div>
+
+          ${(thumbUrl || creativeBody) ? `
+            <div class="creative-preview-box">
+              ${thumbUrl ? `
+                <div class="creative-thumb-container" onclick="App.openCreativeModal('${lead.id}')" title="Click to view ad creative preview">
+                  <img src="${this.escapeHtml(thumbUrl)}" class="creative-thumb-img" alt="Ad Creative">
+                  <span class="creative-thumb-badge">View</span>
+                </div>
+              ` : `
+                <div class="creative-thumb-container" onclick="App.openCreativeModal('${lead.id}')" style="display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                  ${Icons.image(24)}
+                </div>
+              `}
+              <div class="creative-info">
+                <div class="creative-title">${this.escapeHtml(creativeTitle)}</div>
+                ${creativeBody ? `<div class="creative-body">${this.escapeHtml(creativeBody)}</div>` : ''}
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 4px 10px; font-size: 11px; margin-top: 4px;" onclick="App.openCreativeModal('${lead.id}')">
+                  ${Icons.image(12)} View Ad Creative & Copy &rarr;
+                </button>
+              </div>
+            </div>
+          ` : ''}
+
+          ${formAnswers && formAnswers.length > 0 ? `
+            <div class="form-answers-section">
+              <div class="form-answers-title">
+                ${Icons.notepad(12)} Prospect Inbound Form Responses (${formAnswers.length})
+              </div>
+              <div class="form-qa-list">
+                ${formAnswers.map(qa => `
+                  <div class="form-qa-row">
+                    <span class="form-qa-q">${this.escapeHtml(qa.question || 'Question')}:</span>
+                    <span class="form-qa-a">${this.escapeHtml(qa.answer || '—')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    if (hasScraping) {
+      return `
+        <div class="channel-intelligence-card">
+          <div class="channel-card-header">
+            <div class="channel-card-title">
+              ${Icons.globe(14)} B2B Scraping Intelligence
+            </div>
+            <span class="channel-source-tag">Scraped Source</span>
+          </div>
+
+          <div class="channel-meta-grid">
+            ${ch.website ? `
+              <div class="channel-meta-pill">
+                <div class="channel-meta-label">Website</div>
+                <div class="channel-meta-value">
+                  <a href="${this.escapeHtml(ch.website.startsWith('http') ? ch.website : 'https://' + ch.website)}" target="_blank" style="color: var(--color-ink); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                    ${this.escapeHtml(ch.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ${Icons.externalLink(11)}
+                  </a>
+                </div>
+              </div>
+            ` : ''}
+            ${ch.linkedin_url ? `
+              <div class="channel-meta-pill">
+                <div class="channel-meta-label">LinkedIn</div>
+                <div class="channel-meta-value">
+                  <a href="${this.escapeHtml(ch.linkedin_url.startsWith('http') ? ch.linkedin_url : 'https://' + ch.linkedin_url)}" target="_blank" style="color: var(--color-ink); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                    Company Profile ${Icons.externalLink(11)}
+                  </a>
+                </div>
+              </div>
+            ` : ''}
+            ${ch.industry ? `
+              <div class="channel-meta-pill">
+                <div class="channel-meta-label">Industry</div>
+                <div class="channel-meta-value">${this.escapeHtml(ch.industry)}</div>
+              </div>
+            ` : ''}
+            ${ch.scraped_query ? `
+              <div class="channel-meta-pill">
+                <div class="channel-meta-label">Scraped Query</div>
+                <div class="channel-meta-value">${this.escapeHtml(ch.scraped_query)}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    if (hasReferral) {
+      return `
+        <div class="channel-intelligence-card">
+          <div class="channel-card-header">
+            <div class="channel-card-title">
+              ${Icons.user(14)} Referral Background
+            </div>
+            <span class="channel-source-tag">Referral</span>
+          </div>
+
+          <div class="channel-meta-grid">
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Referred By</div>
+              <div class="channel-meta-value">${this.escapeHtml(ch.referred_by || 'Unknown')}</div>
+            </div>
+            ${ch.relationship ? `
+              <div class="channel-meta-pill">
+                <div class="channel-meta-label">Relationship / Context</div>
+                <div class="channel-meta-value">${this.escapeHtml(ch.relationship)}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
+  },
+
+  openCreativeModal(leadId) {
+    const lead = this.state.selectedLead || this.state.leads.find(l => l.id === leadId);
+    if (!lead || !lead.channel_data) return;
+
+    const ch = lead.channel_data;
+    const cr = ch.creative || {};
+    const imgUrl = cr.image_url || cr.thumbnail_url;
+    const title = cr.title || ch.ad_name || lead.meta_ad_name || 'Meta Ad Creative';
+    const body = cr.body || 'No ad copy body recorded.';
+
+    const modalHtml = `
+      <div id="creative-modal-overlay" class="creative-modal-overlay" onclick="if(event.target === this) App.closeCreativeModal()">
+        <div class="creative-modal-content">
+          <div class="creative-modal-header">
+            <div style="font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+              ${Icons.image(16)} Ad Creative & Copy Preview
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="App.closeCreativeModal()" style="padding: 4px 8px;">
+              ${Icons.close(14)}
+            </button>
+          </div>
+          <div class="creative-modal-body">
+            ${imgUrl ? `<img src="${this.escapeHtml(imgUrl)}" class="creative-modal-img" alt="Ad Preview">` : ''}
+            <div style="margin-bottom: 14px;">
+              <span class="badge" style="font-size: 11px; margin-bottom: 6px; display: inline-block;">${this.escapeHtml(ch.platform || 'Instagram / Facebook')}</span>
+              <h3 style="font-size: 16px; font-weight: 600; margin-top: 6px; margin-bottom: 8px;">${this.escapeHtml(title)}</h3>
+              <div style="font-size: 13px; color: var(--color-ink-soft); line-height: 1.5; white-space: pre-line; background: var(--color-surface-alt); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-hairline);">
+                ${this.escapeHtml(body)}
+              </div>
+            </div>
+            <div style="font-size: 12px; color: var(--color-mid-gray); display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--color-hairline); padding-top: 10px;">
+              <div><strong>Campaign:</strong> ${this.escapeHtml(ch.campaign_name || 'N/A')}</div>
+              <div><strong>Ad Set:</strong> ${this.escapeHtml(ch.adset_name || 'N/A')}</div>
+              ${ch.ad_id ? `<div><strong>Meta Ad ID:</strong> <code>${this.escapeHtml(ch.ad_id)}</code></div>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+  },
+
+  closeCreativeModal() {
+    const modal = document.getElementById('creative-modal-overlay');
+    if (modal) modal.remove();
+  },
+
   // ---------------- 2. FULL LEAD RECORD PAGE ----------------
 
   renderLeadDetailPage() {
@@ -542,10 +764,12 @@ const App = {
         <!-- Two Column Record Layout -->
         <div class="record-grid">
           <!-- Left Column: Comprehensive Lead Record & Edit Form -->
-          <div class="record-card">
-            <div class="record-section-title">
-              ${Icons.edit(14)} Lead Profile & Core Attributes
-            </div>
+          <div>
+            ${this.renderChannelIntelligenceCard(lead)}
+            <div class="record-card">
+              <div class="record-section-title">
+                ${Icons.edit(14)} Lead Profile & Core Attributes
+              </div>
 
             <form id="lead-edit-form" onsubmit="App.handleSaveLeadEdits(event, '${lead.id}')">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
@@ -636,8 +860,9 @@ const App = {
               </div>
             </form>
           </div>
+        </div>
 
-          <!-- Right Column: Quick Call / Note Logging & Activity Feed -->
+        <!-- Right Column: Quick Call / Note Logging & Activity Feed -->
           <div>
             <!-- Fast Call Logger Card -->
             <div class="record-card" style="margin-bottom: 20px;">
