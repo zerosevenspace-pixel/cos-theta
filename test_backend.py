@@ -16,7 +16,9 @@ def run_tests():
     print("=== ZERO7 CRM E2E TEST SUITE ===")
     
     # 1. Login Admin
-    res = client.post("/api/auth/login", json={"email": "abhijeet@zero7.in", "password": "admin123"})
+    res = client.post("/api/auth/login", json={"email": "abhijeet@zero7.space", "password": "admin123"})
+    if res.status_code != 200:
+        res = client.post("/api/auth/login", json={"email": "abhijeet@zero7.in", "password": "admin123"})
     assert res.status_code == 200, f"Admin login failed: {res.text}"
     admin_token = res.json()["token"]
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
@@ -103,7 +105,9 @@ def run_tests():
     print(f"[PASS] 9. Updated deal stage to negotiation")
 
     # 10. Login Member (Shailesh)
-    res = client.post("/api/auth/login", json={"email": "shailesh@zero7.in", "password": "member123"})
+    res = client.post("/api/auth/login", json={"email": "shailesh@zero7.space", "password": "member123"})
+    if res.status_code != 200:
+        res = client.post("/api/auth/login", json={"email": "shailesh@zero7.in", "password": "member123"})
     assert res.status_code == 200
     member_token = res.json()["token"]
     member_headers = {"Authorization": f"Bearer {member_token}"}
@@ -170,10 +174,20 @@ def run_tests():
     assert "assigned_leads_count" in sameer
     print(f"[PASS] 16. Workload stats verified: {len(users)} executioners tracked")
 
-    # 17. Update User Role (Promote Member to Admin)
-    res = client.put(f"/api/users/{user_id}", json={"role": "admin"}, headers=admin_headers)
+    # 17. Update User Profile, Credentials & Role (Name, Email, Password, Role)
+    res = client.put(f"/api/users/{user_id}", json={
+        "name": "Sameer K. Updated",
+        "email": "sameer.k@zero7.space",
+        "role": "admin",
+        "password": "newpassword123"
+    }, headers=admin_headers)
     assert res.status_code == 200 and res.json()["role"] == "admin"
-    print(f"[PASS] 17. User role updated to admin")
+    assert res.json()["name"] == "Sameer K. Updated"
+    assert res.json()["email"] == "sameer.k@zero7.space"
+    # Verify login with updated password
+    res_new_login = client.post("/api/auth/login", json={"email": "sameer.k@zero7.space", "password": "newpassword123"})
+    assert res_new_login.status_code == 200
+    print(f"[PASS] 17. User profile, role, and password updated & verified via login")
 
     # 18. Delete User & Protection check
     res_del = client.delete(f"/api/users/{user_id}", headers=admin_headers)
