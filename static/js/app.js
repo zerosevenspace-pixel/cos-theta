@@ -341,6 +341,9 @@ const App = {
       );
     }
 
+    // Sort newest leads first by created_at
+    filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
     const isAdmin = this.state.currentUser?.role === 'admin';
 
     container.innerHTML = `
@@ -409,6 +412,7 @@ const App = {
             <tr>
               <th>Contact Name</th>
               <th>Company & City</th>
+              <th>Inbound Date & Time</th>
               <th>Temp</th>
               <th>Call Stage</th>
               <th>Source</th>
@@ -420,7 +424,7 @@ const App = {
           <tbody>
             ${filtered.length > 0 ? filtered.map(lead => this.renderLeadRow(lead)).join('') : `
               <tr>
-                <td colspan="8" style="text-align: center; padding: 48px; color: var(--color-mid-gray);">
+                <td colspan="9" style="text-align: center; padding: 48px; color: var(--color-mid-gray);">
                   <div style="font-size: 15px; font-weight: 500; color: var(--color-ink); margin-bottom: 4px;">No leads found</div>
                   <p style="font-size: 13px;">Create a new lead manually or ingest from Meta Ads webhook.</p>
                 </td>
@@ -457,6 +461,10 @@ const App = {
           <div style="font-size: 11px; color: var(--color-mid-gray); display: flex; align-items: center; gap: 3px;">
             ${Icons.mapPin(11)} ${this.escapeHtml(lead.city || 'Location unassigned')}
           </div>
+        </td>
+        <td>
+          <div style="font-weight: 500; font-size: 12.5px; color: var(--color-ink); white-space: nowrap;">${this.formatDateTime(lead.created_at)}</div>
+          <div style="font-size: 11px; color: var(--color-mid-gray);">${this.formatRelativeTime(lead.created_at)}</div>
         </td>
         <td>${this.getTemperatureBadge(lead.temperature)}</td>
         <td>${this.getCallStageBadge(lead.call_stage)}</td>
@@ -515,6 +523,10 @@ const App = {
           </div>
 
           <div class="channel-meta-grid">
+            <div class="channel-meta-pill">
+              <div class="channel-meta-label">Submitted On</div>
+              <div class="channel-meta-value" style="color: var(--color-ink); font-weight: 600;">${this.formatDateTime(lead.created_at)}</div>
+            </div>
             <div class="channel-meta-pill">
               <div class="channel-meta-label">Campaign</div>
               <div class="channel-meta-value">${this.escapeHtml(campaign)}</div>
@@ -724,9 +736,13 @@ const App = {
               ${this.getCallStageBadge(lead.call_stage)}
               ${this.getStatusBadge(lead.status)}
             </div>
-            <div style="color: var(--color-mid-gray); font-size: 14px; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500; color: var(--color-ink);">${this.escapeHtml(lead.business_name || 'No business name')}</span>
+            <div style="color: var(--color-mid-gray); font-size: 13.5px; margin-top: 6px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <span style="font-weight: 600; color: var(--color-ink);">${this.escapeHtml(lead.business_name || 'No business name')}</span>
               ${lead.city ? `&bull; <span>${Icons.mapPin(13)} ${this.escapeHtml(lead.city)}</span>` : ''}
+              &bull; 
+              <span style="display: inline-flex; align-items: center; gap: 4px; color: var(--color-ink); font-size: 12.5px;">
+                ${Icons.calendar(13)} <strong>Inbound:</strong> ${this.formatDateTime(lead.created_at)} <span style="color: var(--color-mid-gray);">(${this.formatRelativeTime(lead.created_at)})</span>
+              </span>
             </div>
           </div>
 
@@ -752,12 +768,24 @@ const App = {
 
         <!-- Two Column Record Layout -->
         <div class="record-grid">
-          <!-- Left Column: Comprehensive Lead Record & Edit Form -->
+          <!-- Left Column: Comprehensive Lead Record & Edit Form FIRST -->
           <div>
-            ${this.renderChannelIntelligenceCard(lead)}
-            <div class="record-card">
+            <div class="record-card" style="margin-bottom: 20px;">
               <div class="record-section-title">
                 ${Icons.edit(14)} Lead Profile & Core Attributes
+              </div>
+
+              <!-- Inbound Timestamp Banner -->
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--color-surface-alt); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-hairline); margin-bottom: 16px; font-size: 12px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="color: var(--color-mid-gray); display: inline-flex; align-items: center; gap: 4px;">${Icons.calendar(13)} Inbound Date & Time:</span>
+                  <strong style="color: var(--color-ink);">${this.formatDateTime(lead.created_at)}</strong>
+                  <span style="color: var(--color-mid-gray);">(${this.formatRelativeTime(lead.created_at)})</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="color: var(--color-mid-gray); display: inline-flex; align-items: center; gap: 4px;">${Icons.clock(13)} Last Updated:</span>
+                  <strong style="color: var(--color-ink);">${this.formatDateTime(lead.updated_at || lead.created_at)}</strong>
+                </div>
               </div>
 
             <form id="lead-edit-form" onsubmit="App.handleSaveLeadEdits(event, '${lead.id}')">
@@ -849,6 +877,9 @@ const App = {
               </div>
             </form>
           </div>
+
+          <!-- Channel Intelligence & Meta Attribution Card placed BELOW Details -->
+          ${this.renderChannelIntelligenceCard(lead)}
         </div>
 
         <!-- Right Column: Quick Call / Note Logging & Activity Feed -->
@@ -1837,20 +1868,53 @@ const App = {
     }
   },
 
-  formatDate(dateStr) {
+  formatDateTime(dateStr) {
+    if (!dateStr) return 'N/A';
+    try {
+      let s = String(dateStr);
+      if (s.includes(' ') && !s.includes('T')) {
+        s = s.replace(' ', 'T') + 'Z';
+      }
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  },
+
+  formatRelativeTime(dateStr) {
     if (!dateStr) return '';
     try {
-      const date = new Date(dateStr);
+      let s = String(dateStr);
+      if (s.includes(' ') && !s.includes('T')) {
+        s = s.replace(' ', 'T') + 'Z';
+      }
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return '';
       const now = new Date();
-      const diff = Math.floor((now - date) / 1000);
+      const diff = Math.floor((now - d) / 1000);
+      if (diff < 0) return 'Just now';
       if (diff < 60) return 'Just now';
       if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
       if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
       if (diff < 172800) return 'Yesterday';
-      return date.toLocaleDateString();
+      if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     } catch (e) {
-      return dateStr;
+      return '';
     }
+  },
+
+  formatDate(dateStr) {
+    return this.formatRelativeTime(dateStr) || this.formatDateTime(dateStr);
   },
 
   getStatusBadge(status) {
