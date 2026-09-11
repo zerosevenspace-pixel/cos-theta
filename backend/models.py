@@ -32,6 +32,7 @@ class LeadCreate(BaseModel):
     last_update_notes: Optional[str] = None
     next_action: Optional[str] = None
     next_action_date: Optional[str] = None
+    channel_data: Optional[dict] = None
 
 class LeadUpdate(BaseModel):
     name: Optional[str] = None
@@ -49,6 +50,7 @@ class LeadUpdate(BaseModel):
     last_update_notes: Optional[str] = None
     next_action: Optional[str] = None
     next_action_date: Optional[str] = None
+    channel_data: Optional[dict] = None
 
 class DealCreate(BaseModel):
     lead_id: Optional[str] = None
