@@ -1047,8 +1047,8 @@ const App = {
               <div style="background: var(--color-surface-alt); padding: 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 12px; border: 1px solid var(--color-hairline);">
                 <div style="color: var(--color-mid-gray); margin-bottom: 4px;">Callback URL:</div>
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                  <code style="word-break: break-all;">${int.meta_ads?.webhook_url || 'http://68.183.92.215/api/webhooks/meta-leads'}</code>
-                  <button class="btn btn-secondary btn-sm" onclick="App.copyText('${int.meta_ads?.webhook_url || 'http://68.183.92.215/api/webhooks/meta-leads'}')">${Icons.copy(12)} Copy</button>
+                  <code style="word-break: break-all;">${int.meta_ads?.webhook_url || 'https://cos.zero7.space/api/webhooks/meta-leads'}</code>
+                  <button class="btn btn-secondary btn-sm" onclick="App.copyText('${int.meta_ads?.webhook_url || 'https://cos.zero7.space/api/webhooks/meta-leads'}')">${Icons.copy(12)} Copy</button>
                 </div>
                 <div style="color: var(--color-mid-gray); margin-top: 8px; margin-bottom: 2px;">Verify Token:</div>
                 <code>${int.meta_ads?.verify_token || 'zero7_meta_verify_2026'}</code>
