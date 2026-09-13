@@ -22,6 +22,7 @@ class LeadCreate(BaseModel):
     business_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    website: Optional[str] = None
     city: Optional[str] = None
     temperature: Optional[str] = 'warm'
     call_stage: Optional[str] = 'first_call'
@@ -39,6 +40,7 @@ class LeadUpdate(BaseModel):
     business_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    website: Optional[str] = None
     city: Optional[str] = None
     temperature: Optional[str] = None
     call_stage: Optional[str] = None
