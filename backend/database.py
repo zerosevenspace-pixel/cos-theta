@@ -102,6 +102,25 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # Safe migrations for website field
+    try:
+        c.execute("ALTER TABLE leads ADD COLUMN website TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # Safe migrations for call recording fields
+    recording_cols = [
+        ("recording_file_name", "TEXT"),
+        ("recording_mime_type", "TEXT"),
+        ("recording_size_bytes", "INTEGER"),
+        ("recording_duration_secs", "INTEGER"),
+    ]
+    for col, col_type in recording_cols:
+        try:
+            c.execute(f"ALTER TABLE call_logs ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -341,8 +360,9 @@ class Repository:
         call_id = 'call_' + uuid.uuid4().hex[:8]
         now = Repository.now()
         Repository._execute(
-            "INSERT INTO call_logs (id, lead_id, user_id, outcome, notes, duration_minutes, called_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (call_id, data.get('lead_id'), data.get('user_id'), data.get('outcome'), data.get('notes'), data.get('duration_minutes'), now),
+            "INSERT INTO call_logs (id, lead_id, user_id, outcome, notes, duration_minutes, called_at, recording_file_name, recording_mime_type, recording_size_bytes, recording_duration_secs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (call_id, data.get('lead_id'), data.get('user_id'), data.get('outcome'), data.get('notes'), data.get('duration_minutes'), now,
+             data.get('recording_file_name'), data.get('recording_mime_type'), data.get('recording_size_bytes'), data.get('recording_duration_secs')),
             commit=True
         )
         # Update lead last_contacted_at
@@ -363,7 +383,8 @@ class Repository:
     @staticmethod
     def get_lead_activity(lead_id: str):
         calls = Repository._execute("""
-            SELECT c.id, 'call' as type, c.outcome, c.notes, c.duration_minutes, c.called_at as date, c.user_id, u.name as user_name 
+            SELECT c.id, 'call' as type, c.outcome, c.notes, c.duration_minutes, c.called_at as date, c.user_id, u.name as user_name,
+                   c.recording_file_name, c.recording_mime_type, c.recording_size_bytes, c.recording_duration_secs
             FROM call_logs c 
             LEFT JOIN users u ON c.user_id = u.id 
             WHERE c.lead_id = ?
