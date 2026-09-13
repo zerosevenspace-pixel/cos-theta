@@ -511,16 +511,21 @@ const App = {
       const creativeBody = creative.body || '';
       const formAnswers = ch.form_answers || [];
 
+      const cardId = 'channel-intel-' + (lead.id || 'default');
       return `
         <div class="channel-intelligence-card">
-          <div class="channel-card-header">
+          <div class="channel-card-header" style="cursor: pointer;" onclick="App.toggleChannelCard('${cardId}')">
             <div class="channel-card-title">
               ${Icons.target(14)} Meta Ads Attribution
             </div>
-            <span class="channel-source-tag">
-              ${platform}
-            </span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="channel-source-tag">
+                ${platform}
+              </span>
+              <span id="${cardId}-arrow" style="transition: transform 0.2s ease; display: inline-block;">▼</span>
+            </div>
           </div>
+          <div id="${cardId}-body">
 
           <div class="channel-meta-grid">
             <div class="channel-meta-pill">
@@ -582,19 +587,25 @@ const App = {
               </div>
             </div>
           ` : ''}
+          </div>
         </div>
       `;
     }
 
     if (hasScraping) {
+      const cardId = 'channel-intel-' + (lead.id || 'default') + '-scraping';
       return `
         <div class="channel-intelligence-card">
-          <div class="channel-card-header">
+          <div class="channel-card-header" style="cursor: pointer;" onclick="App.toggleChannelCard('${cardId}')">
             <div class="channel-card-title">
               ${Icons.globe(14)} B2B Scraping Intelligence
             </div>
-            <span class="channel-source-tag">Scraped Source</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="channel-source-tag">Scraped Source</span>
+              <span id="${cardId}-arrow" style="transition: transform 0.2s ease; display: inline-block;">▼</span>
+            </div>
           </div>
+          <div id="${cardId}-body">
 
           <div class="channel-meta-grid">
             ${ch.website ? `
@@ -630,19 +641,25 @@ const App = {
               </div>
             ` : ''}
           </div>
+          </div>
         </div>
       `;
     }
 
     if (hasReferral) {
+      const cardId = 'channel-intel-' + (lead.id || 'default') + '-referral';
       return `
         <div class="channel-intelligence-card">
-          <div class="channel-card-header">
+          <div class="channel-card-header" style="cursor: pointer;" onclick="App.toggleChannelCard('${cardId}')">
             <div class="channel-card-title">
               ${Icons.user(14)} Referral Background
             </div>
-            <span class="channel-source-tag">Referral</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="channel-source-tag">Referral</span>
+              <span id="${cardId}-arrow" style="transition: transform 0.2s ease; display: inline-block;">▼</span>
+            </div>
           </div>
+          <div id="${cardId}-body">
 
           <div class="channel-meta-grid">
             <div class="channel-meta-pill">
@@ -655,6 +672,7 @@ const App = {
                 <div class="channel-meta-value">${this.escapeHtml(ch.relationship)}</div>
               </div>
             ` : ''}
+          </div>
           </div>
         </div>
       `;
@@ -822,6 +840,13 @@ const App = {
                 </div>
               </div>
 
+              <div style="display: grid; grid-template-columns: 1fr; gap: 14px;">
+                <div class="form-group">
+                  <label>Website URL</label>
+                  <input type="url" name="website" class="input" placeholder="e.g. https://example.com" value="${this.escapeHtml(lead.website || '')}">
+                </div>
+              </div>
+
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px;">
                 <div class="form-group">
                   <label>Lead Temperature</label>
@@ -889,7 +914,7 @@ const App = {
               <div class="record-section-title">
                 ${Icons.phone(14)} Log A Call
               </div>
-              <form onsubmit="App.handleQuickLogCall(event, '${lead.id}')">
+              <form id="call-log-form-${lead.id}" onsubmit="App.handleQuickLogCall(event, '${lead.id}')">
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;" id="quick-outcome-pills">
                   <button type="button" class="outcome-pill selected" onclick="App.selectOutcome(this, 'Connected')">Connected</button>
                   <button type="button" class="outcome-pill" onclick="App.selectOutcome(this, 'DNP')">DNP (No Pick)</button>
@@ -899,6 +924,14 @@ const App = {
                 <input type="hidden" name="outcome" id="selected-outcome" value="Connected">
 
                 <textarea name="notes" class="input" rows="2" placeholder="Key discussion points or next steps..." required style="margin-bottom: 10px;"></textarea>
+                
+                <div id="recording-upload-zone" style="border: 1.5px dashed var(--color-hairline); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 10px; text-align: center; cursor: pointer; transition: border-color 0.2s;" onclick="document.getElementById('recording-file-input').click()" ondragover="event.preventDefault(); this.style.borderColor='var(--color-ink)'" ondragleave="this.style.borderColor='var(--color-hairline)'" ondrop="App.handleRecordingDrop(event)">
+                  <input type="file" id="recording-file-input" name="recording" accept="audio/*,video/*,.mp3,.m4a,.wav,.mp4,.mov,.webm" style="display: none;" onchange="App.handleRecordingSelect(this)">
+                  <div id="recording-preview" style="font-size: 12px; color: var(--color-mid-gray);">
+                    📎 Attach call recording (MP3, M4A, WAV, MP4) · Max 200MB
+                  </div>
+                </div>
+
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <input type="number" name="duration_minutes" class="input" value="5" min="1" max="180" style="width: 110px;" title="Duration in minutes">
                   <button type="submit" class="btn btn-primary btn-sm">Record Call</button>
@@ -943,6 +976,32 @@ const App = {
     const icon = isCall ? Icons.phone(13) : Icons.notepad(13);
     const author = act.user_name || 'Consultant';
 
+    let recordingHtml = '';
+    if (isCall && act.recording_file_name) {
+      const isVideo = (act.recording_mime_type || '').startsWith('video/');
+      const sizeMB = act.recording_size_bytes ? (act.recording_size_bytes / (1024 * 1024)).toFixed(1) : '?';
+      const durationStr = act.recording_duration_secs ? `${Math.floor(act.recording_duration_secs / 60)}:${String(act.recording_duration_secs % 60).padStart(2, '0')}` : '';
+      const ext = act.recording_file_name.split('.').pop().toUpperCase();
+      
+      if (isVideo) {
+        recordingHtml = `
+          <div style="margin-top: 8px; background: var(--color-surface-alt); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--color-hairline);">
+            <video controls preload="metadata" style="width: 100%; border-radius: 4px; max-height: 240px;">
+              <source src="/api/recordings/${encodeURIComponent(act.recording_file_name)}" type="${act.recording_mime_type || 'video/mp4'}">
+            </video>
+            <div style="font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">🎥 ${ext} · ${sizeMB} MB${durationStr ? ' · ' + durationStr : ''}</div>
+          </div>`;
+      } else {
+        recordingHtml = `
+          <div style="margin-top: 8px; background: var(--color-surface-alt); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--color-hairline);">
+            <audio controls preload="metadata" style="width: 100%; height: 36px;">
+              <source src="/api/recordings/${encodeURIComponent(act.recording_file_name)}" type="${act.recording_mime_type || 'audio/mpeg'}">
+            </audio>
+            <div style="font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">🎙️ ${ext} · ${sizeMB} MB${durationStr ? ' · ' + durationStr : ''}</div>
+          </div>`;
+      }
+    }
+
     return `
       <div class="activity-item">
         <div class="activity-dot" style="${isCall ? 'background: var(--color-ink);' : 'background: var(--color-mid-gray);'}"></div>
@@ -952,8 +1011,9 @@ const App = {
           </span>
           <span class="activity-date" style="font-size: 11.5px;">${this.formatDate(act.date)}</span>
         </div>
-        <div style="font-size: 11px; color: var(--color-mid-gray); margin-bottom: 4px;">By ${this.escapeHtml(author)}${act.duration_minutes ? ` &bull; ${act.duration_minutes} mins` : ''}</div>
+        <div style="font-size: 11px; color: var(--color-mid-gray); margin-bottom: 4px;">By ${this.escapeHtml(author)}${act.duration_minutes ? ` &bull; ${act.duration_minutes} mins` : ''}${act.recording_file_name ? ' · 📎 Recording' : ''}</div>
         ${act.notes ? `<div class="activity-body">${this.escapeHtml(act.notes)}</div>` : ''}
+        ${recordingHtml}
       </div>
     `;
   },
@@ -977,17 +1037,35 @@ const App = {
 
   async handleQuickLogCall(e, leadId) {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const outcome = fd.get('outcome') || 'Connected';
-    const notes = fd.get('notes');
-    const duration = parseInt(fd.get('duration_minutes')) || 5;
+    const form = e.target;
+    const outcome = form.querySelector('#selected-outcome').value || 'Connected';
+    const notes = form.querySelector('[name="notes"]').value;
+    const duration = parseInt(form.querySelector('[name="duration_minutes"]').value) || 5;
+    const fileInput = form.querySelector('[name="recording"]');
+    const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
 
     try {
-      await API.post(`/api/leads/${leadId}/calls`, {
-        outcome,
-        notes,
-        duration_minutes: duration
-      });
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append('outcome', outcome);
+        fd.append('notes', notes);
+        fd.append('duration_minutes', duration.toString());
+        fd.append('recording', fileInput.files[0]);
+        
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/leads/${leadId}/calls`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: fd
+        });
+        if (!res.ok) throw new Error('Upload failed');
+      } else {
+        await API.post(`/api/leads/${leadId}/calls`, {
+          outcome,
+          notes,
+          duration_minutes: duration
+        });
+      }
 
       // Also update lead's call_stage based on outcome
       const outcomeMap = {
@@ -1005,6 +1083,44 @@ const App = {
       await this.viewLead(leadId);
     } catch (err) {
       console.error(err);
+      API.showToast('Error logging call', 'error');
+    }
+  },
+
+  handleRecordingSelect(input) {
+    const preview = document.getElementById('recording-preview');
+    if (input.files && input.files[0]) {
+      const file = input.files[0];
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      if (file.size > 200 * 1024 * 1024) {
+        API.showToast('File too large. Max 200MB.', 'error');
+        input.value = '';
+        return;
+      }
+      const icon = file.type.startsWith('video/') ? '🎥' : '🎙️';
+      preview.innerHTML = `${icon} <strong>${this.escapeHtml(file.name)}</strong> · ${sizeMB} MB <button type="button" onclick="App.clearRecording(event)" style="margin-left: 8px; background: none; border: none; color: var(--color-mid-gray); cursor: pointer; font-size: 14px;">✕</button>`;
+      preview.style.color = 'var(--color-ink)';
+    }
+  },
+
+  handleRecordingDrop(e) {
+    e.preventDefault();
+    e.currentTarget.style.borderColor = 'var(--color-hairline)';
+    const fileInput = document.getElementById('recording-file-input');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      fileInput.files = e.dataTransfer.files;
+      this.handleRecordingSelect(fileInput);
+    }
+  },
+
+  clearRecording(e) {
+    e.stopPropagation();
+    const fileInput = document.getElementById('recording-file-input');
+    if (fileInput) fileInput.value = '';
+    const preview = document.getElementById('recording-preview');
+    if (preview) {
+      preview.innerHTML = '📎 Attach call recording (MP3, M4A, WAV, MP4) · Max 200MB';
+      preview.style.color = 'var(--color-mid-gray)';
     }
   },
 
@@ -1766,6 +1882,12 @@ const App = {
               <input type="email" name="email" class="input" placeholder="vikram@example.com">
             </div>
           </div>
+          <div style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px;">
+            <div class="form-group">
+              <label>Website URL</label>
+              <input type="url" name="website" class="input" placeholder="https://example.com">
+            </div>
+          </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
             <div class="form-group">
               <label>Acquisition Source</label>
@@ -1898,6 +2020,20 @@ const App = {
     btn.classList.add('selected');
     const input = document.getElementById('selected-outcome');
     if (input) input.value = outcome;
+  },
+
+  toggleChannelCard(cardId) {
+    const body = document.getElementById(cardId + '-body');
+    const arrow = document.getElementById(cardId + '-arrow');
+    if (body && arrow) {
+      if (body.style.display === 'none') {
+        body.style.display = '';
+        arrow.style.transform = 'rotate(0deg)';
+      } else {
+        body.style.display = 'none';
+        arrow.style.transform = 'rotate(-90deg)';
+      }
+    }
   },
 
   async triggerWebhookTest() {
