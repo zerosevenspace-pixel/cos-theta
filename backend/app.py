@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from typing import Optional
 import os
+import io
 
 from backend.database import Repository, init_db
 from backend.models import UserLogin, UserCreate, UserUpdate, LeadCreate, LeadUpdate, DealCreate, DealUpdate, CallLogCreate, NoteCreate
@@ -134,11 +135,78 @@ def convert_lead(id: str, user: dict = Depends(require_auth)):
     return deal
 
 @app.post("/api/leads/{id}/calls")
-def log_call(id: str, data: CallLogCreate, user: dict = Depends(require_auth)):
-    d = data.dict(exclude_unset=True)
-    d['lead_id'] = id
-    d['user_id'] = user.get('user_id')
+async def log_call(id: str, request: Request, user: dict = Depends(require_auth)):
+    content_type = request.headers.get('content-type', '')
+    
+    if 'multipart/form-data' in content_type:
+        form = await request.form()
+        outcome = form.get('outcome', 'Connected')
+        notes = form.get('notes', '')
+        duration_minutes = int(form.get('duration_minutes', 5))
+        
+        recording_data = {}
+        upload_file = form.get('recording')
+        if upload_file and hasattr(upload_file, 'filename') and upload_file.filename:
+            file_bytes = await upload_file.read()
+            if len(file_bytes) > 0:
+                call_id_preview = 'call_' + __import__('uuid').uuid4().hex[:8]
+                recordings_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'recordings')
+                os.makedirs(recordings_dir, exist_ok=True)
+                
+                safe_name = upload_file.filename.replace('..', '').replace('/', '_').replace('\\', '_')
+                save_path = os.path.join(recordings_dir, f"{call_id_preview}_{safe_name}")
+                with open(save_path, 'wb') as f:
+                    f.write(file_bytes)
+                
+                recording_data['recording_file_name'] = f"{call_id_preview}_{safe_name}"
+                recording_data['recording_mime_type'] = upload_file.content_type or 'audio/mpeg'
+                recording_data['recording_size_bytes'] = len(file_bytes)
+                
+                # Try to extract duration using mutagen
+                try:
+                    import mutagen
+                    audio = mutagen.File(save_path)
+                    if audio and audio.info:
+                        recording_data['recording_duration_secs'] = int(audio.info.length)
+                except Exception:
+                    pass
+        
+        d = {
+            'lead_id': id,
+            'user_id': user.get('user_id'),
+            'outcome': outcome,
+            'notes': notes,
+            'duration_minutes': duration_minutes,
+            **recording_data
+        }
+    else:
+        body = await request.json()
+        d = {
+            'lead_id': id,
+            'user_id': user.get('user_id'),
+            'outcome': body.get('outcome', 'Connected'),
+            'notes': body.get('notes', ''),
+            'duration_minutes': body.get('duration_minutes', 5)
+        }
+    
     return Repository.log_call(d)
+
+@app.get("/api/recordings/{filename}")
+def stream_recording(filename: str):
+    recordings_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'recordings')
+    file_path = os.path.join(recordings_dir, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Recording not found")
+    
+    # Determine media type
+    ext = os.path.splitext(filename)[1].lower()
+    media_types = {
+        '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+        '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo'
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+    return FileResponse(file_path, media_type=media_type, filename=filename)
 
 @app.post("/api/leads/{id}/notes")
 def add_note(id: str, data: NoteCreate, user: dict = Depends(require_auth)):
