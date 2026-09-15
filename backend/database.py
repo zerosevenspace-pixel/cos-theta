@@ -156,8 +156,43 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+    # Safe migrations for transcription fields
+    transcription_cols = [
+        ("transcription_text", "TEXT"),
+        ("transcription_drive_file_id", "TEXT"),
+        ("transcription_confidence", "REAL"),
+        ("transcription_language", "TEXT"),
+    ]
+    for col, col_type in transcription_cols:
+        try:
+            c.execute(f"ALTER TABLE call_logs ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
+    # Performance indexes for WhatsApp messages
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_wa_messages_lead ON whatsapp_messages(lead_id)",
+        "CREATE INDEX IF NOT EXISTS idx_wa_messages_phone ON whatsapp_messages(lead_phone)",
+        "CREATE INDEX IF NOT EXISTS idx_wa_messages_ts ON whatsapp_messages(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_wa_messages_account ON whatsapp_messages(account_phone)",
+    ]
+    for idx in indexes:
+        try:
+            c.execute(idx)
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
+
+    # Enable WAL mode for better concurrent read/write performance
+    try:
+        wal_conn = get_connection()
+        wal_conn.execute("PRAGMA journal_mode=WAL")
+        wal_conn.close()
+    except Exception:
+        pass
+
 
 class Repository:
     @staticmethod
@@ -395,14 +430,25 @@ class Repository:
         call_id = 'call_' + uuid.uuid4().hex[:8]
         now = Repository.now()
         Repository._execute(
-            "INSERT INTO call_logs (id, lead_id, user_id, outcome, notes, duration_minutes, called_at, recording_file_name, recording_mime_type, recording_size_bytes, recording_duration_secs, recording_drive_file_id, recording_drive_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO call_logs (id, lead_id, user_id, outcome, notes, duration_minutes, called_at, recording_file_name, recording_mime_type, recording_size_bytes, recording_duration_secs, recording_drive_file_id, recording_drive_url, transcription_text, transcription_drive_file_id, transcription_confidence, transcription_language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (call_id, data.get('lead_id'), data.get('user_id'), data.get('outcome'), data.get('notes'), data.get('duration_minutes'), now,
              data.get('recording_file_name'), data.get('recording_mime_type'), data.get('recording_size_bytes'), data.get('recording_duration_secs'),
-             data.get('recording_drive_file_id'), data.get('recording_drive_url')),
+             data.get('recording_drive_file_id'), data.get('recording_drive_url'),
+             data.get('transcription_text'), data.get('transcription_drive_file_id'), data.get('transcription_confidence'), data.get('transcription_language')),
             commit=True
         )
         # Update lead last_contacted_at
         Repository._execute("UPDATE leads SET last_contacted_at = ?, updated_at = ? WHERE id = ?", (now, now, data.get('lead_id')), commit=True)
+        return Repository._execute("SELECT * FROM call_logs WHERE id = ?", (call_id,), fetchone=True)
+
+    @staticmethod
+    def update_call_transcription(call_id: str, transcription_text: str, drive_file_id: str = None, confidence: float = None, language: str = None):
+        """Update transcription data for an existing call log."""
+        Repository._execute(
+            "UPDATE call_logs SET transcription_text = ?, transcription_drive_file_id = ?, transcription_confidence = ?, transcription_language = ? WHERE id = ?",
+            (transcription_text, drive_file_id, confidence, language, call_id),
+            commit=True
+        )
         return Repository._execute("SELECT * FROM call_logs WHERE id = ?", (call_id,), fetchone=True)
 
     @staticmethod
@@ -421,7 +467,8 @@ class Repository:
         calls = Repository._execute("""
             SELECT c.id, 'call' as type, c.outcome, c.notes, c.duration_minutes, c.called_at as date, c.user_id, u.name as user_name,
                    c.recording_file_name, c.recording_mime_type, c.recording_size_bytes, c.recording_duration_secs,
-                   c.recording_drive_file_id, c.recording_drive_url
+                   c.recording_drive_file_id, c.recording_drive_url,
+                   c.transcription_text, c.transcription_confidence, c.transcription_language
             FROM call_logs c 
             LEFT JOIN users u ON c.user_id = u.id 
             WHERE c.lead_id = ?
