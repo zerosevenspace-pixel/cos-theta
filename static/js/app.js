@@ -309,10 +309,7 @@ const App = {
 
   // ---------------- 1. LEADS VIEW ----------------
 
-  renderLeadsView() {
-    const container = document.getElementById('page-content');
-    if (!container) return;
-
+  getFilteredLeads() {
     let filtered = [...this.state.leads];
 
     if (this.state.filters.status) {
@@ -341,16 +338,44 @@ const App = {
       );
     }
 
-    // Sort newest leads first by created_at
     filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return filtered;
+  },
 
+  renderLeadsTableBody() {
+    const tbody = document.getElementById('leads-table-body');
+    if (!tbody) return false;
+    const filtered = this.getFilteredLeads();
+    tbody.innerHTML = filtered.length > 0 ? filtered.map(lead => this.renderLeadRow(lead)).join('') : `
+      <tr>
+        <td colspan="9" style="text-align: center; padding: 48px; color: var(--color-mid-gray);">
+          <div style="font-size: 15px; font-weight: 500; color: var(--color-ink); margin-bottom: 4px;">No leads found</div>
+          <p style="font-size: 13px;">${this.state.filters.search ? `No leads matching "${this.escapeHtml(this.state.filters.search)}"` : 'Create a new lead manually or ingest from Meta Ads webhook.'}</p>
+        </td>
+      </tr>
+    `;
+
+    const resetBtn = document.getElementById('leads-filter-reset-btn');
+    const hasActiveFilter = (this.state.filters.status || this.state.filters.source || this.state.filters.temperature || this.state.filters.call_stage || this.state.filters.assigned_to || this.state.filters.search);
+    if (resetBtn) {
+      resetBtn.style.display = hasActiveFilter ? '' : 'none';
+    }
+    return true;
+  },
+
+  renderLeadsView() {
+    const container = document.getElementById('page-content');
+    if (!container) return;
+
+    const filtered = this.getFilteredLeads();
     const isAdmin = this.state.currentUser?.role === 'admin';
+    const hasActiveFilter = (this.state.filters.status || this.state.filters.source || this.state.filters.temperature || this.state.filters.call_stage || this.state.filters.assigned_to || this.state.filters.search);
 
     container.innerHTML = `
       <div class="filter-bar">
         <div class="search-box" style="flex: 1; max-width: 280px;">
           ${Icons.search(16)}
-          <input type="text" class="input" placeholder="Search by name, company, city..." 
+          <input type="text" id="lead-search-input" class="input" placeholder="Search by name, company, city..." 
                  value="${this.escapeHtml(this.state.filters.search)}" 
                  oninput="App.updateFilter('search', this.value)">
         </div>
@@ -401,9 +426,7 @@ const App = {
           </select>
         ` : ''}
 
-        ${(this.state.filters.status || this.state.filters.source || this.state.filters.temperature || this.state.filters.call_stage || this.state.filters.assigned_to || this.state.filters.search) ? `
-          <button class="btn btn-secondary" onclick="App.clearFilters()" style="padding: 6px 12px; font-size: 12px;">Reset</button>
-        ` : ''}
+        <button id="leads-filter-reset-btn" class="btn btn-secondary" onclick="App.clearFilters()" style="padding: 6px 12px; font-size: 12px; display: ${hasActiveFilter ? '' : 'none'};">Reset</button>
       </div>
 
       <div class="table-container">
@@ -421,12 +444,12 @@ const App = {
               <th style="text-align: right;">Action</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="leads-table-body">
             ${filtered.length > 0 ? filtered.map(lead => this.renderLeadRow(lead)).join('') : `
               <tr>
                 <td colspan="9" style="text-align: center; padding: 48px; color: var(--color-mid-gray);">
                   <div style="font-size: 15px; font-weight: 500; color: var(--color-ink); margin-bottom: 4px;">No leads found</div>
-                  <p style="font-size: 13px;">Create a new lead manually or ingest from Meta Ads webhook.</p>
+                  <p style="font-size: 13px;">${this.state.filters.search ? `No leads matching "${this.escapeHtml(this.state.filters.search)}"` : 'Create a new lead manually or ingest from Meta Ads webhook.'}</p>
                 </td>
               </tr>
             `}
@@ -438,7 +461,21 @@ const App = {
 
   updateFilter(key, value) {
     this.state.filters[key] = value;
+    if (key === 'search') {
+      // Fast path: update table body directly without destroying the input element or losing focus
+      if (this.renderLeadsTableBody()) {
+        return;
+      }
+    }
     this.renderLeadsView();
+    // In case renderLeadsView was called, preserve search input focus
+    if (key === 'search') {
+      const input = document.getElementById('lead-search-input');
+      if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
   },
 
   clearFilters() {
