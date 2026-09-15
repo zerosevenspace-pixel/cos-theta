@@ -1046,6 +1046,22 @@ const App = {
         <div style="font-size: 11px; color: var(--color-mid-gray); margin-bottom: 4px;">By ${this.escapeHtml(author)}${act.duration_minutes ? ` &bull; ${act.duration_minutes} mins` : ''}${act.recording_file_name ? ' · 📎 Recording' : ''}</div>
         ${act.notes ? `<div class="activity-body">${this.escapeHtml(act.notes)}</div>` : ''}
         ${recordingHtml}
+        ${isCall && act.transcription_text ? `
+          <div style="margin-top: 6px;">
+            <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? '\ud83d\udcdd View Transcript' : '\ud83d\udcdd Hide Transcript'" style="background: none; border: 1px solid var(--color-hairline); border-radius: 4px; padding: 3px 8px; font-size: 10.5px; color: var(--color-ink); cursor: pointer;">
+              \ud83d\udcdd View Transcript
+            </button>
+            <div style="display: none; margin-top: 6px; background: var(--color-surface-alt); border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); padding: 10px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--color-hairline);">
+                <span style="font-size: 10px; color: var(--color-mid-gray);">
+                  \ud83c\udfaf ${act.transcription_confidence ? (act.transcription_confidence * 100).toFixed(0) + '% confidence' : ''}
+                  ${act.transcription_language ? ' \u00b7 ' + (act.transcription_language === 'hi' ? 'Hindi' : act.transcription_language === 'en' ? 'English' : act.transcription_language) : ''}
+                </span>
+              </div>
+              ${this.escapeHtml(act.transcription_text)}
+            </div>
+          </div>
+        ` : ''}
       </div>
     `;
   },
