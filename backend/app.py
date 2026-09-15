@@ -127,6 +127,20 @@ def create_deal(data: DealCreate, user: dict = Depends(require_auth)):
 def update_deal(id: str, data: DealUpdate, user: dict = Depends(require_auth)):
     return Repository.update_deal(id, data.dict(exclude_unset=True))
 
+@app.delete("/api/deals/{id}")
+def delete_deal(id: str, user: dict = Depends(require_auth)):
+    res = Repository.delete_deal(id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return res
+
+@app.post("/api/deals/{id}/revert")
+def revert_deal(id: str, user: dict = Depends(require_auth)):
+    res = Repository.delete_deal(id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return {"status": "success", "message": "Deal reverted back to lead successfully", "lead_id": res.get("lead_id")}
+
 @app.post("/api/leads/{id}/convert")
 def convert_lead(id: str, user: dict = Depends(require_auth)):
     lead = Repository.get_lead(id)
