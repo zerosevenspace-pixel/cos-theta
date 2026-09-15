@@ -982,22 +982,39 @@ const App = {
       const sizeMB = act.recording_size_bytes ? (act.recording_size_bytes / (1024 * 1024)).toFixed(1) : '?';
       const durationStr = act.recording_duration_secs ? `${Math.floor(act.recording_duration_secs / 60)}:${String(act.recording_duration_secs % 60).padStart(2, '0')}` : '';
       const ext = act.recording_file_name.split('.').pop().toUpperCase();
+      const hasDrive = !!act.recording_drive_file_id;
       
-      if (isVideo) {
+      const audioSrc = hasDrive 
+        ? `/api/recordings/drive/${encodeURIComponent(act.recording_drive_file_id)}`
+        : `/api/recordings/${encodeURIComponent(act.recording_file_name)}`;
+      
+      if (isVideo && hasDrive) {
+        recordingHtml = `
+          <div style="margin-top: 8px; background: var(--color-surface-alt); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--color-hairline);">
+            <iframe src="https://drive.google.com/file/d/${act.recording_drive_file_id}/preview" width="100%" height="240" style="border-radius: 4px; border: none;" allow="autoplay"></iframe>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">
+              <span>\ud83c\udfa5 ${ext} \u00b7 ${sizeMB} MB${durationStr ? ' \u00b7 ' + durationStr : ''}</span>
+              <a href="https://drive.google.com/file/d/${act.recording_drive_file_id}/view" target="_blank" style="color: var(--color-ink); text-decoration: underline; font-size: 10px;">Open in Drive \u2197</a>
+            </div>
+          </div>`;
+      } else if (isVideo) {
         recordingHtml = `
           <div style="margin-top: 8px; background: var(--color-surface-alt); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--color-hairline);">
             <video controls preload="metadata" style="width: 100%; border-radius: 4px; max-height: 240px;">
-              <source src="/api/recordings/${encodeURIComponent(act.recording_file_name)}" type="${act.recording_mime_type || 'video/mp4'}">
+              <source src="${audioSrc}" type="${act.recording_mime_type || 'video/mp4'}">
             </video>
-            <div style="font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">🎥 ${ext} · ${sizeMB} MB${durationStr ? ' · ' + durationStr : ''}</div>
+            <div style="font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">\ud83c\udfa5 ${ext} \u00b7 ${sizeMB} MB${durationStr ? ' \u00b7 ' + durationStr : ''}</div>
           </div>`;
       } else {
         recordingHtml = `
           <div style="margin-top: 8px; background: var(--color-surface-alt); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--color-hairline);">
             <audio controls preload="metadata" style="width: 100%; height: 36px;">
-              <source src="/api/recordings/${encodeURIComponent(act.recording_file_name)}" type="${act.recording_mime_type || 'audio/mpeg'}">
+              <source src="${audioSrc}" type="${act.recording_mime_type || 'audio/mpeg'}">
             </audio>
-            <div style="font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">🎙️ ${ext} · ${sizeMB} MB${durationStr ? ' · ' + durationStr : ''}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--color-mid-gray); margin-top: 4px;">
+              <span>\ud83c\udf99\ufe0f ${ext} \u00b7 ${sizeMB} MB${durationStr ? ' \u00b7 ' + durationStr : ''}</span>
+              ${hasDrive ? `<a href="https://drive.google.com/file/d/${act.recording_drive_file_id}/view" target="_blank" style="color: var(--color-ink); text-decoration: underline; font-size: 10px;">Open in Drive \u2197</a>` : ''}
+            </div>
           </div>`;
       }
     }
