@@ -624,6 +624,11 @@ def delete_user(id: str, user: dict = Depends(require_admin)):
 
 # ─── WHATSAPP CONVERSATION ENDPOINTS ─────────────────────
 
+@app.get("/api/leads/phones")
+def get_lead_phones(user: dict = Depends(require_auth)):
+    """Return all CRM lead phone numbers mapped to lead IDs. Used by the desktop sync agent."""
+    return Repository.get_all_lead_phones()
+
 @app.post("/api/whatsapp/accounts")
 def register_whatsapp_account(request_data: dict, user: dict = Depends(require_auth)):
     phone = request_data.get("phone_number", "").strip()

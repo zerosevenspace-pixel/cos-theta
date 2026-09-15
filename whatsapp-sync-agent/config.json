@@ -1,0 +1,19 @@
+﻿{
+  "crm_url": "https://cos.zero7.space",
+  "crm_email": "abhijeet@zero7.space",
+  "crm_password": "admin123",
+  "accounts": [
+    {
+      "id": "central",
+      "label": "Zero7 Business (9479007951)",
+      "auth_dir": "auth_central"
+    },
+    {
+      "id": "personal",
+      "label": "Abhijeet Personal",
+      "auth_dir": "auth_personal"
+    }
+  ],
+  "sync_interval_seconds": 30,
+  "log_file": "sync.log"
+}

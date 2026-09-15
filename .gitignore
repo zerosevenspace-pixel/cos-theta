@@ -10,4 +10,11 @@ cos_theta_data/
 .pytest_cache/
 scratch/
 .system_generated/
-.aider*
+node_modules/
+whatsapp-sync-agent/auth_*/
+whatsapp-sync-agent/downloads/
+whatsapp-sync-agent/*.log
+whatsapp-sync-agent/qr_*.png
+whatsapp-sync-agent/group_messages.json
+zero7_crm.db
+*.db
