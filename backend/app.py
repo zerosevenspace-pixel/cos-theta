@@ -5,6 +5,8 @@ from typing import Optional
 import os
 import io
 
+from backend.integrations.google_drive import upload_recording as drive_upload, is_available as drive_is_available, get_file_stream as drive_get_stream
+
 from backend.database import Repository, init_db
 from backend.models import UserLogin, UserCreate, UserUpdate, LeadCreate, LeadUpdate, DealCreate, DealUpdate, CallLogCreate, NoteCreate
 from backend.auth import hash_password, verify_password, create_token, get_current_user
@@ -170,6 +172,22 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
                         recording_data['recording_duration_secs'] = int(audio.info.length)
                 except Exception:
                     pass
+
+                # Upload to Google Drive
+                try:
+                    lead = Repository.get_lead(id)
+                    lead_name = lead.get('name', 'Unknown') if lead else 'Unknown'
+                    lead_biz = lead.get('business_name', '') if lead else ''
+                    drive_result = drive_upload(
+                        file_bytes, f"{call_id_preview}_{safe_name}",
+                        upload_file.content_type or 'audio/mpeg',
+                        lead_name, lead_biz
+                    )
+                    if drive_result:
+                        recording_data['recording_drive_file_id'] = drive_result['file_id']
+                        recording_data['recording_drive_url'] = drive_result['embed_link']
+                except Exception:
+                    pass  # Drive upload is optional, local file is the fallback
         
         d = {
             'lead_id': id,
@@ -195,18 +213,25 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
 def stream_recording(filename: str):
     recordings_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'recordings')
     file_path = os.path.join(recordings_dir, filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Recording not found")
-    
-    # Determine media type
-    ext = os.path.splitext(filename)[1].lower()
-    media_types = {
-        '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
-        '.ogg': 'audio/ogg', '.webm': 'audio/webm',
-        '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo'
-    }
-    media_type = media_types.get(ext, 'application/octet-stream')
-    return FileResponse(file_path, media_type=media_type, filename=filename)
+    if os.path.exists(file_path):
+        ext = os.path.splitext(filename)[1].lower()
+        media_types = {
+            '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+            '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo'
+        }
+        media_type = media_types.get(ext, 'application/octet-stream')
+        return FileResponse(file_path, media_type=media_type, filename=filename)
+    raise HTTPException(status_code=404, detail="Recording not found")
+
+@app.get("/api/recordings/drive/{file_id}")
+def stream_drive_recording(file_id: str):
+    """Proxy stream a recording from Google Drive."""
+    result = drive_get_stream(file_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Drive recording not found")
+    file_bytes, mime_type = result
+    return StreamingResponse(io.BytesIO(file_bytes), media_type=mime_type)
 
 @app.post("/api/leads/{id}/notes")
 def add_note(id: str, data: NoteCreate, user: dict = Depends(require_auth)):
@@ -420,8 +445,8 @@ def get_integrations_status(user: dict = Depends(require_auth)):
         },
         "google_drive": {
             "name": "Google Drive Call Recordings",
-            "status": "staged",
-            "note": "Ready for Google Service Account integration"
+            "status": "connected" if drive_is_available() else "staged",
+            "note": "Service Account authenticated" if drive_is_available() else "Ready for Google Service Account integration"
         }
     }
 
