@@ -1,11 +1,13 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Form, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from typing import Optional
 import os
 import io
+import logging
 
 from backend.integrations.google_drive import upload_recording as drive_upload, is_available as drive_is_available, get_file_stream as drive_get_stream
+from backend.integrations.deepgram import transcribe_audio, is_available as deepgram_is_available
 
 from backend.database import Repository, init_db
 from backend.models import UserLogin, UserCreate, UserUpdate, LeadCreate, LeadUpdate, DealCreate, DealUpdate, CallLogCreate, NoteCreate
@@ -74,6 +76,13 @@ def list_leads(status: Optional[str] = None, source: Optional[str] = None, assig
 def create_lead(data: LeadCreate, user: dict = Depends(require_auth)):
     return Repository.create_lead(data.dict(exclude_unset=True))
 
+@app.get("/api/leads/phones")
+def get_lead_phones(user: dict = Depends(require_auth)):
+    """Return all CRM lead phone numbers (used by sync agent for filtering)."""
+    phone_map = Repository.get_all_lead_phones()
+    return {"phones": list(phone_map.keys())}
+
+
 @app.get("/api/leads/{id}")
 def get_lead(id: str, user: dict = Depends(require_auth)):
     lead = Repository.get_lead(id)
@@ -136,8 +145,44 @@ def convert_lead(id: str, user: dict = Depends(require_auth)):
     Repository.update_lead(id, {"status": "proposal"})
     return deal
 
+logger = logging.getLogger(__name__)
+
+def _background_transcribe(call_id: str, file_bytes: bytes, mime_type: str, lead_name: str, lead_biz: str):
+    """Background task: transcribe recording and upload transcript to Drive."""
+    try:
+        result = transcribe_audio(file_bytes, mime_type)
+        if not result or not result.get('text'):
+            return
+        
+        transcript_text = result['formatted_text'] or result['text']
+        drive_file_id = None
+        
+        # Upload transcript as .txt to Drive
+        try:
+            txt_content = f"CALL TRANSCRIPT\nLead: {lead_name}\nConfidence: {result.get('confidence', 0):.1%}\nLanguage: {result.get('language', 'en')}\n{'='*50}\n\n{transcript_text}"
+            txt_bytes = txt_content.encode('utf-8')
+            txt_result = drive_upload(
+                txt_bytes,
+                f"{call_id}_transcript.txt",
+                "text/plain",
+                lead_name, lead_biz
+            )
+            if txt_result:
+                drive_file_id = txt_result['file_id']
+        except Exception:
+            pass
+        
+        # Update DB
+        Repository.update_call_transcription(
+            call_id, transcript_text, drive_file_id,
+            result.get('confidence'), result.get('language')
+        )
+        logger.info(f"Transcription saved for {call_id}: {len(transcript_text)} chars")
+    except Exception as e:
+        logger.error(f"Background transcription failed for {call_id}: {e}")
+
 @app.post("/api/leads/{id}/calls")
-async def log_call(id: str, request: Request, user: dict = Depends(require_auth)):
+async def log_call(id: str, request: Request, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)):
     content_type = request.headers.get('content-type', '')
     
     if 'multipart/form-data' in content_type:
@@ -147,6 +192,8 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
         duration_minutes = int(form.get('duration_minutes', 5))
         
         recording_data = {}
+        _file_bytes_for_transcription = None
+        _mime_for_transcription = None
         upload_file = form.get('recording')
         if upload_file and hasattr(upload_file, 'filename') and upload_file.filename:
             file_bytes = await upload_file.read()
@@ -164,6 +211,10 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
                 recording_data['recording_mime_type'] = upload_file.content_type or 'audio/mpeg'
                 recording_data['recording_size_bytes'] = len(file_bytes)
                 
+                # Save for background transcription
+                _file_bytes_for_transcription = file_bytes
+                _mime_for_transcription = upload_file.content_type or 'audio/mpeg'
+                
                 # Try to extract duration using mutagen
                 try:
                     import mutagen
@@ -174,10 +225,10 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
                     pass
 
                 # Upload to Google Drive
+                lead = Repository.get_lead(id)
+                lead_name = lead.get('name', 'Unknown') if lead else 'Unknown'
+                lead_biz = lead.get('business_name', '') if lead else ''
                 try:
-                    lead = Repository.get_lead(id)
-                    lead_name = lead.get('name', 'Unknown') if lead else 'Unknown'
-                    lead_biz = lead.get('business_name', '') if lead else ''
                     drive_result = drive_upload(
                         file_bytes, f"{call_id_preview}_{safe_name}",
                         upload_file.content_type or 'audio/mpeg',
@@ -187,7 +238,7 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
                         recording_data['recording_drive_file_id'] = drive_result['file_id']
                         recording_data['recording_drive_url'] = drive_result['embed_link']
                 except Exception:
-                    pass  # Drive upload is optional, local file is the fallback
+                    pass  # Drive upload is optional
         
         d = {
             'lead_id': id,
@@ -206,8 +257,23 @@ async def log_call(id: str, request: Request, user: dict = Depends(require_auth)
             'notes': body.get('notes', ''),
             'duration_minutes': body.get('duration_minutes', 5)
         }
+        _file_bytes_for_transcription = None
+        _mime_for_transcription = None
     
-    return Repository.log_call(d)
+    result = Repository.log_call(d)
+    
+    # Queue background transcription if recording was uploaded
+    if _file_bytes_for_transcription and deepgram_is_available():
+        lead = Repository.get_lead(id)
+        lead_name = lead.get('name', 'Unknown') if lead else 'Unknown'
+        lead_biz = lead.get('business_name', '') if lead else ''
+        background_tasks.add_task(
+            _background_transcribe, result['id'],
+            _file_bytes_for_transcription, _mime_for_transcription,
+            lead_name, lead_biz
+        )
+    
+    return result
 
 @app.get("/api/recordings/{filename}")
 def stream_recording(filename: str):
@@ -447,6 +513,12 @@ def get_integrations_status(user: dict = Depends(require_auth)):
             "name": "Google Drive Call Recordings",
             "status": "connected" if drive_is_available() else "staged",
             "note": "Service Account authenticated" if drive_is_available() else "Ready for Google Service Account integration"
+        },
+        "deepgram": {
+            "name": "Deepgram Call Transcription",
+            "status": "connected" if deepgram_is_available() else "not_configured",
+            "model": "Nova-2",
+            "features": ["Auto-transcription", "Hindi+English", "Speaker diarization", "Drive transcript upload"]
         }
     }
 
@@ -537,12 +609,6 @@ def delete_user(id: str, user: dict = Depends(require_admin)):
     return {"status": "success", "message": f"User {target['name']} deleted successfully"}
 
 # ─── WHATSAPP CONVERSATION ENDPOINTS ─────────────────────
-
-@app.get("/api/leads/phones")
-def get_lead_phones(user: dict = Depends(require_auth)):
-    """Return all CRM lead phone numbers (used by sync agent for filtering)."""
-    phone_map = Repository.get_all_lead_phones()
-    return {"phones": list(phone_map.keys())}
 
 @app.post("/api/whatsapp/accounts")
 def register_whatsapp_account(request_data: dict, user: dict = Depends(require_auth)):
