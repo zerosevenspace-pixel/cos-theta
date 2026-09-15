@@ -536,6 +536,57 @@ def delete_user(id: str, user: dict = Depends(require_admin)):
     Repository.delete_user(id)
     return {"status": "success", "message": f"User {target['name']} deleted successfully"}
 
+# ─── WHATSAPP CONVERSATION ENDPOINTS ─────────────────────
+
+@app.get("/api/leads/phones")
+def get_lead_phones(user: dict = Depends(require_auth)):
+    """Return all CRM lead phone numbers (used by sync agent for filtering)."""
+    phone_map = Repository.get_all_lead_phones()
+    return {"phones": list(phone_map.keys())}
+
+@app.post("/api/whatsapp/accounts")
+def register_whatsapp_account(request_data: dict, user: dict = Depends(require_auth)):
+    phone = request_data.get("phone_number", "").strip()
+    label = request_data.get("label", "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_number is required")
+    account = Repository.register_whatsapp_account(phone, label)
+    return account
+
+@app.get("/api/whatsapp/accounts")
+def list_whatsapp_accounts(user: dict = Depends(require_auth)):
+    return Repository.get_whatsapp_accounts()
+
+@app.post("/api/whatsapp/messages/sync")
+async def sync_whatsapp_messages(request: Request):
+    """Batch sync messages from the desktop agent. Accepts API key or auth token."""
+    body = await request.json()
+    account_phone = body.get("account_phone", "")
+    messages = body.get("messages", [])
+    if not account_phone or not messages:
+        raise HTTPException(status_code=400, detail="account_phone and messages required")
+    inserted = Repository.sync_whatsapp_messages(account_phone, messages)
+    return {"status": "ok", "inserted": inserted, "total_sent": len(messages)}
+
+@app.get("/api/leads/{id}/whatsapp")
+def get_lead_whatsapp(id: str, account_phone: Optional[str] = None, user: dict = Depends(require_auth)):
+    lead = Repository.get_lead(id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    accounts = Repository.get_whatsapp_accounts_for_lead(id)
+    all_accounts = Repository.get_whatsapp_accounts()
+    # If no specific account requested, use first available
+    if not account_phone and accounts:
+        account_phone = accounts[0]['phone_number']
+    messages = Repository.get_whatsapp_conversation(id, account_phone) if account_phone else []
+    return {
+        "accounts": [dict(a) for a in all_accounts],
+        "active_accounts": [dict(a) for a in accounts],
+        "selected_account": account_phone,
+        "messages": [dict(m) for m in messages],
+        "lead_phone": lead.get('phone', '')
+    }
+
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 static_dir = os.path.join(base_dir, 'static')
 
