@@ -81,6 +81,30 @@ def init_db():
             FOREIGN KEY (lead_id) REFERENCES leads (id),
             FOREIGN KEY (user_id) REFERENCES users (id)
         );
+        CREATE TABLE IF NOT EXISTS whatsapp_accounts (
+            id TEXT PRIMARY KEY,
+            phone_number TEXT UNIQUE NOT NULL,
+            label TEXT,
+            is_active INTEGER DEFAULT 1,
+            last_synced_at TEXT,
+            created_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS whatsapp_messages (
+            id TEXT PRIMARY KEY,
+            account_id TEXT,
+            account_phone TEXT NOT NULL,
+            lead_phone TEXT NOT NULL,
+            lead_id TEXT,
+            direction TEXT NOT NULL,
+            message_text TEXT,
+            message_type TEXT DEFAULT 'text',
+            media_caption TEXT,
+            timestamp TEXT NOT NULL,
+            wa_message_id TEXT UNIQUE,
+            status TEXT DEFAULT 'delivered',
+            created_at TEXT,
+            FOREIGN KEY (lead_id) REFERENCES leads (id)
+        );
     ''')
 
     # Safe migrations for existing DBs
@@ -411,5 +435,107 @@ class Repository:
         activities = calls + notes
         activities.sort(key=lambda x: x['date'] if x['date'] else '', reverse=True)
         return activities
+
+    @staticmethod
+    def normalize_phone(phone):
+        """Normalize phone to last 10 digits."""
+        if not phone:
+            return ''
+        digits = ''.join(c for c in phone if c.isdigit())
+        return digits[-10:] if len(digits) >= 10 else digits
+
+    @staticmethod
+    def get_all_lead_phones():
+        """Return all normalized lead phone numbers with their IDs."""
+        leads = Repository._execute("SELECT id, phone FROM leads WHERE phone IS NOT NULL AND phone != ''", fetchall=True)
+        result = {}
+        for l in leads:
+            normalized = Repository.normalize_phone(l['phone'])
+            if normalized:
+                result[normalized] = l['id']
+        return result
+
+    @staticmethod
+    def register_whatsapp_account(phone_number, label=''):
+        acc_id = 'wa_' + uuid.uuid4().hex[:8]
+        now = Repository.now()
+        try:
+            Repository._execute(
+                "INSERT INTO whatsapp_accounts (id, phone_number, label, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+                (acc_id, phone_number, label, now), commit=True
+            )
+        except Exception:
+            # Already exists, update label
+            Repository._execute(
+                "UPDATE whatsapp_accounts SET label = ?, is_active = 1 WHERE phone_number = ?",
+                (label, phone_number), commit=True
+            )
+        return Repository._execute("SELECT * FROM whatsapp_accounts WHERE phone_number = ?", (phone_number,), fetchone=True)
+
+    @staticmethod
+    def get_whatsapp_accounts():
+        return Repository._execute("SELECT * FROM whatsapp_accounts WHERE is_active = 1 ORDER BY label", fetchall=True)
+
+    @staticmethod
+    def sync_whatsapp_messages(account_phone, messages):
+        """Batch insert messages, skipping duplicates by wa_message_id."""
+        phone_map = Repository.get_all_lead_phones()
+        account = Repository._execute("SELECT id FROM whatsapp_accounts WHERE phone_number = ?", (account_phone,), fetchone=True)
+        account_id = account['id'] if account else None
+        now = Repository.now()
+        inserted = 0
+        for msg in messages:
+            lead_phone_norm = Repository.normalize_phone(msg.get('lead_phone', ''))
+            lead_id = phone_map.get(lead_phone_norm)
+            if not lead_id:
+                continue  # Skip messages not matching any CRM lead
+            msg_id = 'wamsg_' + uuid.uuid4().hex[:8]
+            try:
+                Repository._execute(
+                    """INSERT INTO whatsapp_messages 
+                    (id, account_id, account_phone, lead_phone, lead_id, direction, message_text, message_type, media_caption, timestamp, wa_message_id, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (msg_id, account_id, account_phone, lead_phone_norm, lead_id,
+                     msg.get('direction', 'out'), msg.get('message_text', ''),
+                     msg.get('message_type', 'text'), msg.get('media_caption'),
+                     msg.get('timestamp', now), msg.get('wa_message_id'),
+                     msg.get('status', 'delivered'), now),
+                    commit=True
+                )
+                inserted += 1
+            except Exception:
+                pass  # Duplicate wa_message_id, skip
+        # Update last_synced_at
+        Repository._execute(
+            "UPDATE whatsapp_accounts SET last_synced_at = ? WHERE phone_number = ?",
+            (now, account_phone), commit=True
+        )
+        return inserted
+
+    @staticmethod
+    def get_whatsapp_conversation(lead_id, account_phone=None):
+        """Get WhatsApp messages for a lead, optionally filtered by account."""
+        if account_phone:
+            messages = Repository._execute(
+                "SELECT * FROM whatsapp_messages WHERE lead_id = ? AND account_phone = ? ORDER BY timestamp ASC",
+                (lead_id, account_phone), fetchall=True
+            )
+        else:
+            messages = Repository._execute(
+                "SELECT * FROM whatsapp_messages WHERE lead_id = ? ORDER BY timestamp ASC",
+                (lead_id,), fetchall=True
+            )
+        return messages
+
+    @staticmethod
+    def get_whatsapp_accounts_for_lead(lead_id):
+        """Get all WhatsApp accounts that have conversations with this lead."""
+        return Repository._execute("""
+            SELECT DISTINCT wa.id, wa.phone_number, wa.label
+            FROM whatsapp_accounts wa
+            INNER JOIN whatsapp_messages wm ON wa.phone_number = wm.account_phone
+            WHERE wm.lead_id = ?
+            ORDER BY wa.label
+        """, (lead_id,), fetchall=True)
 
 init_db()
