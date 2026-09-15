@@ -426,6 +426,20 @@ class Repository:
         return Repository._execute(query, tuple(params), fetchall=True)
 
     @staticmethod
+    def delete_deal(deal_id: str):
+        deal = Repository.get_deal(deal_id)
+        if not deal:
+            return None
+        lead_id = deal.get('lead_id')
+        if lead_id:
+            lead = Repository.get_lead(lead_id)
+            if lead and lead.get('status') == 'proposal':
+                new_status = 'contacted' if lead.get('last_contacted_at') else 'new'
+                Repository.update_lead(lead_id, {'status': new_status})
+        Repository._execute("DELETE FROM deals WHERE id = ?", (deal_id,), commit=True)
+        return {"status": "success", "deleted_deal_id": deal_id, "lead_id": lead_id}
+
+    @staticmethod
     def log_call(data: dict):
         call_id = 'call_' + uuid.uuid4().hex[:8]
         now = Repository.now()
