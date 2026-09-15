@@ -776,6 +776,7 @@ const App = {
     const activity = lead.activity || [];
     const cleanPhone = (lead.phone || '').replace(/[^0-9+]/g, '');
     const waPhone = cleanPhone.startsWith('+') ? cleanPhone.replace('+', '') : (cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone);
+    const activeDeal = (this.state.deals || []).find(d => d.lead_id === lead.id);
 
     container.innerHTML = `
       <div class="record-page">
@@ -801,11 +802,9 @@ const App = {
             </div>
           </div>
 
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            ${lead.phone ? `
-              <a href="tel:${cleanPhone}" class="btn btn-secondary" style="text-decoration: none;">
-                ${Icons.phone(14)} Call
-              </a>
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            ${waPhone ? `
               <a href="https://wa.me/${waPhone}" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
                 ${Icons.whatsapp(14)} WhatsApp
               </a>
@@ -815,9 +814,18 @@ const App = {
                 ${Icons.mail(14)} Email
               </a>
             ` : ''}
-            <button class="btn btn-primary" onclick="App.convertToDeal('${lead.id}')">
-              ${Icons.briefcase(14)} Promote to Deal &rarr;
-            </button>
+            ${activeDeal ? `
+              <button class="btn btn-secondary" onclick="App.viewDeal('${activeDeal.id}')">
+                ${Icons.briefcase(14)} View Active Deal
+              </button>
+              <button class="btn btn-secondary" style="color: var(--color-critical); border-color: var(--color-hairline);" onclick="App.revertDealToLead('${activeDeal.id}')">
+                ↺ Revert Deal
+              </button>
+            ` : `
+              <button class="btn btn-primary" onclick="App.convertToDeal('${lead.id}')">
+                ${Icons.briefcase(14)} Promote to Deal &rarr;
+              </button>
+            `}
           </div>
         </div>
 
@@ -1235,6 +1243,23 @@ const App = {
     }
   },
 
+  async revertDealToLead(dealId) {
+    if (!confirm('Are you sure you want to revert this deal back to a lead? The deal will be removed from the pipeline and the lead will be restored.')) return;
+    try {
+      const res = await API.post(`/api/deals/${dealId}/revert`, {});
+      API.showToast('Deal reverted back to lead!', 'success');
+      await this.loadInitialData();
+      if (res && res.lead_id) {
+        await this.viewLead(res.lead_id);
+      } else {
+        this.renderDealsView();
+      }
+    } catch (e) {
+      console.error(e);
+      API.showToast('Failed to revert deal', 'error');
+    }
+  },
+
   // ---------------- 3. DEALS KANBAN & DETAIL ----------------
 
   renderDealsView() {
@@ -1303,9 +1328,14 @@ const App = {
         </div>
         <div class="kanban-card-meta">
           <span style="font-weight: 600; font-size: 13px; color: var(--color-ink);">₹${(deal.value || 0).toLocaleString()}</span>
-          ${assigned ? `
-            <div class="user-avatar" style="width: 22px; height: 22px; font-size: 10px;" title="${assigned.name}">${initials}</div>
-          ` : '<span style="font-size: 11px; color: var(--color-mid-gray);">Unassigned</span>'}
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="btn btn-secondary btn-sm" style="padding: 2px 7px; font-size: 10.5px; color: var(--color-critical); border-color: var(--color-hairline);" title="Revert deal back to lead" onclick="event.stopPropagation(); App.revertDealToLead('${deal.id}')">
+              ↺ Revert
+            </button>
+            ${assigned ? `
+              <div class="user-avatar" style="width: 22px; height: 22px; font-size: 10px;" title="${assigned.name}">${initials}</div>
+            ` : '<span style="font-size: 11px; color: var(--color-mid-gray);">Unassigned</span>'}
+          </div>
         </div>
       </div>
     `;
@@ -1361,6 +1391,9 @@ const App = {
                 ${Icons.user(14)} View Contact Record
               </button>
             ` : ''}
+            <button class="btn btn-secondary" style="color: var(--color-critical); border-color: var(--color-hairline);" onclick="App.revertDealToLead('${deal.id}')">
+              ↺ Revert to Lead
+            </button>
           </div>
         </div>
 
