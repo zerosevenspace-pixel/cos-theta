@@ -965,10 +965,25 @@ const App = {
                 `}
               </div>
             </div>
+
+            <!-- WhatsApp Conversations Panel -->
+            <div class="record-card" style="margin-top: 20px;">
+              <div class="record-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>${Icons.whatsapp(14)} WhatsApp Conversations</span>
+                <button class="btn btn-secondary btn-sm" onclick="App.loadWhatsAppConversation('${lead.id}')" style="font-size: 11px;">↻ Refresh</button>
+              </div>
+              <div id="wa-account-pills" style="display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px 0;"></div>
+              <div id="wa-chat-container" style="background: #e5ddd5; border-radius: 8px; padding: 12px; min-height: 100px; max-height: 400px; overflow-y: auto; font-size: 13px;">
+                <div style="text-align: center; color: #8696a0; font-size: 12px; padding: 40px 20px;">Loading conversations...</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     `;
+
+    // Auto-load WhatsApp conversations
+    setTimeout(() => this.loadWhatsAppConversation(lead.id), 300);
   },
 
   renderActivityItem(act) {
@@ -2202,6 +2217,123 @@ const App = {
       'linkedin': 'LinkedIn'
     };
     return `<span style="display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--color-surface-alt); border: 1px solid var(--color-hairline);">${labels[src] || source}</span>`;
+  },
+
+  // ─── WhatsApp Conversation Methods ───────────────────
+
+  async loadWhatsAppConversation(leadId, accountPhone) {
+    try {
+      let url = `/api/leads/${leadId}/whatsapp`;
+      if (accountPhone) url += `?account_phone=${encodeURIComponent(accountPhone)}`;
+      const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${this.state.token}` } });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      this._waData = data;
+      this._waLeadId = leadId;
+      this.renderWhatsAppPills(data.accounts, data.active_accounts, data.selected_account);
+      this.renderWhatsAppMessages(data.messages, data.lead_phone);
+    } catch (e) {
+      console.error('WA load error:', e);
+    }
+  },
+
+  renderWhatsAppPills(allAccounts, activeAccounts, selectedPhone) {
+    const container = document.getElementById('wa-account-pills');
+    if (!container) return;
+    if (!allAccounts || allAccounts.length === 0) {
+      container.innerHTML = '<span style="font-size: 11px; color: var(--color-mid-gray);">No WhatsApp accounts registered yet.</span>';
+      return;
+    }
+    const activePhones = new Set((activeAccounts || []).map(a => a.phone_number));
+    container.innerHTML = allAccounts.map(acc => {
+      const isSelected = acc.phone_number === selectedPhone;
+      const hasMessages = activePhones.has(acc.phone_number);
+      const label = acc.label || acc.phone_number;
+      const style = isSelected
+        ? 'background: #25D366; color: white; border-color: #25D366; font-weight: 600;'
+        : hasMessages
+          ? 'background: var(--color-surface); border-color: #25D366; color: var(--color-ink);'
+          : 'background: var(--color-surface); color: var(--color-mid-gray);';
+      return `<button class="outcome-pill" style="${style} font-size: 11px; padding: 4px 10px;" onclick="App.switchWhatsAppAccount('${acc.phone_number}')">
+        \ud83d\udcf1 ${this.escapeHtml(label)}
+      </button>`;
+    }).join('');
+  },
+
+  switchWhatsAppAccount(phone) {
+    if (this._waLeadId) {
+      this.loadWhatsAppConversation(this._waLeadId, phone);
+    }
+  },
+
+  renderWhatsAppMessages(messages, leadPhone) {
+    const container = document.getElementById('wa-chat-container');
+    if (!container) return;
+
+    if (!messages || messages.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px;">
+          <div style="font-size: 32px; margin-bottom: 8px;">\ud83d\udcac</div>
+          <div style="color: #8696a0; font-size: 12px;">No WhatsApp messages found for this lead.</div>
+          <div style="color: #8696a0; font-size: 11px; margin-top: 4px;">Run the sync agent to import conversations.</div>
+        </div>`;
+      return;
+    }
+
+    let html = '';
+    let lastDate = '';
+    for (const msg of messages) {
+      // Date separator
+      const msgDate = msg.timestamp ? new Date(msg.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      if (msgDate && msgDate !== lastDate) {
+        html += `<div style="text-align: center; margin: 12px 0 8px 0;">
+          <span style="background: #e1f2fb; color: #5a7d8a; font-size: 10.5px; padding: 3px 10px; border-radius: 6px;">${msgDate}</span>
+        </div>`;
+        lastDate = msgDate;
+      }
+
+      const isOut = msg.direction === 'out';
+      const bubbleColor = isOut ? '#dcf8c6' : '#ffffff';
+      const align = isOut ? 'flex-end' : 'flex-start';
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+      
+      // Read receipt ticks
+      let ticks = '';
+      if (isOut) {
+        if (msg.status === 'read') ticks = '<span style="color: #53bdeb;">\u2713\u2713</span>';
+        else if (msg.status === 'delivered') ticks = '<span style="color: #8696a0;">\u2713\u2713</span>';
+        else ticks = '<span style="color: #8696a0;">\u2713</span>';
+      }
+
+      // Message content
+      let content = '';
+      if (msg.message_type === 'image') {
+        content = `<div style="color: #667781; font-size: 12px;">\ud83d\udcf7 Photo${msg.media_caption ? ': ' + this.escapeHtml(msg.media_caption) : ''}</div>`;
+      } else if (msg.message_type === 'video') {
+        content = `<div style="color: #667781; font-size: 12px;">\ud83c\udfa5 Video${msg.media_caption ? ': ' + this.escapeHtml(msg.media_caption) : ''}</div>`;
+      } else if (msg.message_type === 'audio') {
+        content = `<div style="color: #667781; font-size: 12px;">\ud83c\udfa4 Voice note</div>`;
+      } else if (msg.message_type === 'document') {
+        content = `<div style="color: #667781; font-size: 12px;">\ud83d\udcc4 Document${msg.media_caption ? ': ' + this.escapeHtml(msg.media_caption) : ''}</div>`;
+      } else {
+        content = `<div style="white-space: pre-wrap; word-break: break-word;">${this.escapeHtml(msg.message_text || '')}</div>`;
+      }
+
+      html += `
+        <div style="display: flex; justify-content: ${align}; margin-bottom: 4px;">
+          <div style="background: ${bubbleColor}; padding: 6px 10px 4px 10px; border-radius: 8px; max-width: 85%; box-shadow: 0 1px 0.5px rgba(0,0,0,0.08); position: relative;">
+            ${content}
+            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 2px;">
+              <span style="font-size: 10px; color: #667781;">${time}</span>
+              ${ticks}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
   },
 
   escapeHtml(str) {
